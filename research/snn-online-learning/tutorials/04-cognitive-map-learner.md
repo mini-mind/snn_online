@@ -25,9 +25,9 @@
 
 这类学习可以由预测误差驱动：
 
-```text
-prediction_error = actual_next_state - predicted_next_state
-```
+$$
+\delta^{pred}_t = s_{t+1} - \hat{s}_{t+1}
+$$
 
 预测误差比奖励密集得多。每一个时间步都有下一状态，因此每一步都能学习。
 
@@ -227,4 +227,217 @@ SNN 自己学习 transition model
 planner 生成动作序列
 LLM 评价高层目标是否达成
 ```
+
+## 12. 原文核心方法速读：学习“动作如何移动内部表示”
+
+这篇论文的核心不是 spike，而是一个更基础的智能体问题：
+
+```text
+如果没有奖励，神经网络能否靠预测学习形成可用于 planning 的认知地图？
+```
+
+它学习的对象不是标签：
+
+```text
+observation -> class
+```
+
+而是环境转移结构：
+
+```text
+current_state + action -> next_state
+```
+
+更抽象地说：
+
+```text
+当前内部表示 z_t
+执行动作 a_t
+预测下一个内部表示 z_hat_{t+1}
+真实下一个表示 z_{t+1} 到来
+用 prediction error 更新连接
+```
+
+公式骨架：
+
+$$
+\delta^{pred}_t = z_{t+1} - \hat z_{t+1}
+$$
+
+$$
+\Delta w \propto e_{local}(t) \delta^{pred}_t
+$$
+
+这就是它和三因子学习的连接：预测误差可以作为第三因子。
+
+## 13. 为什么高维表示能支持 planning
+
+传统地图可以显式写成图：
+
+```text
+A --right--> B --up--> C
+```
+
+但高维神经表示里没有显式节点表。它靠向量空间组织状态：
+
+```text
+相似/相邻状态在表示空间中有结构关系
+动作对应从一个表示到另一个表示的变换
+目标可以表示成某个目标向量或目标区域
+```
+
+planning 的直觉是：
+
+```text
+如果我知道 action a 会把 z 往哪个方向推
+那么我可以在脑内试几个动作
+选一个让 z 更接近 goal 的动作
+```
+
+所以这篇论文的关键不是“记住所有路径”，而是学习一个可泛化的转移结构。
+
+## 14. 方法可以拆成四个模块
+
+```text
+1. encoder
+   把外部观察编码成高维内部状态 z
+
+2. transition learner
+   学习在动作 a 下，z_t 如何变成 z_{t+1}
+
+3. local prediction update
+   用预测误差更新相关连接，不需要每次都有奖励
+
+4. planner
+   在学到的表示空间中模拟动作后果，选择通向目标的动作
+```
+
+最小伪代码：
+
+```text
+observe o_t
+z_t = encode(o_t)
+choose action a_t
+z_pred = predict(z_t, a_t)
+
+execute a_t
+observe o_{t+1}
+z_next = encode(o_{t+1})
+
+error = z_next - z_pred
+update transition connections using local_trace * error
+
+for planning:
+    simulate candidate actions in latent space
+    choose action whose predicted state is closest to goal
+```
+
+## 15. 它和 model-based RL 的区别
+
+它和 model-based RL 都学 world model，但关注点不同。
+
+```text
+model-based RL:
+  学 next_state / reward
+  目标通常是最大化累计奖励
+  planning 常和 value/policy 结合
+
+cognitive map learner:
+  学状态之间的可达结构
+  奖励不是必要条件
+  planning 可以直接基于目标状态和表示空间距离
+```
+
+对你的路线来说，这篇论文提醒你：
+
+```text
+世界模型不应该只为奖励服务
+它首先应该学“世界如何变化”
+```
+
+奖励学习是在世界模型之上的价值层。
+
+## 16. 原文实验效果怎么读
+
+这篇论文的实验重点通常可以按三个问题理解：
+
+```text
+1. 是否能只靠局部预测学习形成可导航结构？
+2. 学到的结构是否能支持到新目标的规划？
+3. 在高维状态空间中是否仍然有效，而不只是在小图上记表？
+```
+
+你看结果时不要只问“准确率是多少”，而要问：
+
+```text
+预测误差是否下降？
+规划成功率是否提高？
+遇到新目标时是否能复用旧地图？
+环境结构变化后是否能重新适应？
+是否比无模型试错更省交互？
+```
+
+如果一个系统能在没有直接奖励的情况下，通过预测学习获得可用于 planning 的结构，这对你的阶段 2 非常重要。
+
+## 17. 和你的 SNN 项目怎么接
+
+可以把它翻译成 SNN 版本：
+
+```text
+sensory SNN:
+  observation -> spike latent state
+
+transition SNN:
+  latent_state + action context -> predicted next latent_state
+
+error module:
+  actual latent - predicted latent
+
+plasticity:
+  local eligibility trace × prediction_error
+
+planner/gate:
+  在 latent space 里评估候选动作
+```
+
+这里的第三因子不是奖励，而是：
+
+```text
+prediction_error_channel[action/context]
+```
+
+这会让你的学习体即使没有外部奖励，也能持续学习环境结构。
+
+## 18. 最小复现实验
+
+建议做一个非常小的认知地图实验：
+
+```text
+环境：5x5 gridworld
+观察：当前位置 one-hot 或局部视野
+动作：up/down/left/right
+学习目标：预测下一状态表示
+规划目标：给定任意目标位置，规划路径
+```
+
+对比：
+
+```text
+无 world model 的 model-free agent
+表格 transition model
+MLP world model
+SNN local prediction learner
+```
+
+核心指标：
+
+```text
+next-state prediction error
+到达目标成功率
+新目标泛化
+障碍改变后的重新学习速度
+学习是否需要奖励
+```
+
+如果这个实验跑通，你就有了从“局部可塑性”走向“可规划世界模型”的最小桥梁。
 

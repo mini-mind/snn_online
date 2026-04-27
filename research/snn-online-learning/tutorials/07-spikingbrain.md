@@ -138,3 +138,168 @@ not: core online learning rule
 
 这样能避免路线漂移。
 
+## 9. 原文核心方法速读：大模型方向的“spiking/brain-inspired”主要解决推理效率
+
+SpikingBrain 这类论文的主问题通常不是：
+
+```text
+如何让突触在推理时在线学习？
+```
+
+而是：
+
+```text
+如何把大语言模型的计算变得更稀疏、更长上下文友好、更接近事件驱动？
+```
+
+因此它的核心方法一般围绕三件事：
+
+```text
+1. spike-like / sparse activation
+   让激活更稀疏，减少无效计算
+
+2. long-context efficient architecture
+   减少注意力随上下文长度增长带来的成本
+
+3. LLM training / adaptation pipeline
+   仍然使用大规模语料、蒸馏、微调或标准优化流程
+```
+
+这和你的主线不同：
+
+```text
+SpikingBrain 类：
+  主要改变大模型推理形式
+
+你的项目：
+  主要改变学习规则，让 SNN 在线改权重
+```
+
+## 10. 低门槛理解：spiking LLM 不等于 SNN 在线学习
+
+看到 “spiking large language model” 时要先拆开：
+
+```text
+spiking activation:
+  神经元输出形式像 spike，或激活更稀疏
+
+neuromorphic efficiency:
+  更适合低功耗/事件驱动硬件
+
+online synaptic plasticity:
+  推理过程中根据经验更新权重
+```
+
+前两者不自动推出第三者。
+
+很多大规模 spiking/brain-inspired LLM 的训练仍然是：
+
+```text
+离线大规模训练
+反向传播或其工程变体
+固定权重推理
+```
+
+所以你读这类论文时要不断问：
+
+```text
+它是在改“计算形态”
+还是在改“学习机制”？
+```
+
+## 11. 原文实验效果怎么读
+
+这类论文的实验通常会强调：
+
+```text
+语言任务性能
+长上下文能力
+推理速度或吞吐
+显存/能耗/稀疏激活收益
+与 Transformer 或其他 LLM baseline 的比较
+```
+
+你需要额外标注：
+
+```text
+是否推理时更新权重？
+是否有持续学习实验？
+是否测试灾难性遗忘？
+是否有局部学习规则？
+是否能把语言反馈转成 modulation signal？
+```
+
+如果答案大多是否，那么它对你的作用是：
+
+```text
+阶段 4 背景资料
+LLM/SNN 接口启发
+低成本 LLM teacher 的可能方向
+```
+
+而不是阶段 1 的学习规则核心。
+
+## 12. 它对你的项目仍然有用的地方
+
+虽然不是主线，它能提醒你三个工程问题。
+
+```text
+1. 稀疏性必须从一开始考虑
+   如果你的 SNN 每步扫描全突触，规模化会失败
+
+2. LLM-SNN 接口需要表示转换
+   text/token/embedding 如何变成 spike/event/modulation？
+
+3. 长上下文和长期记忆不同
+   LLM 的 context 是临时输入窗口
+   SNN 的长期学习应该写入权重或稳定记忆结构
+```
+
+这能帮助你避免把“LLM 长上下文”误当成“智能体长期学习”。
+
+## 13. 可落地的接口设计
+
+未来可以设计一个桥接层：
+
+```text
+LLM output:
+  textual critique
+  goal description
+  task decomposition
+  failure explanation
+
+adapter:
+  compress text into low-dimensional signals
+
+SNN modulation:
+  reward_hint
+  attention_mask
+  novelty_hint
+  risk_penalty
+  goal_context
+```
+
+关键约束：
+
+```text
+LLM 只提供调制和语义脚手架
+SNN 自己通过局部 trace 决定哪些突触更新
+```
+
+这样你不会把项目变成“LLM 蒸馏到 SNN”。
+
+## 14. 读完这类论文后的记录模板
+
+```text
+模型规模：
+是否真正 spike/event-driven：
+是否支持长上下文：
+训练是否仍用 BP：
+推理是否更新权重：
+是否有 neuromorphic hardware 结果：
+是否能输出调制信号：
+对本项目作用：背景 / 接口 / 成本 / 不采用
+```
+
+这能防止路线漂移。
+

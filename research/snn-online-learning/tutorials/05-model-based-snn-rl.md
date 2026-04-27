@@ -212,3 +212,216 @@ memory sampling strategy
 - 阶段 3：policy 和 action selection 进入系统。
 - 阶段 4：LLM 可以作为任务生成器、教师和语义评价器，但不应替代 world model 学习。
 
+## 11. 原文核心方法速读：SNN 同时学模型、策略，并用 dream 扩增经验
+
+这篇论文的核心是把 model-based RL 的三件事放进 recurrent spiking network 语境：
+
+```text
+1. world model
+   预测执行动作后的下一状态/奖励
+
+2. policy 或 controller
+   根据当前状态选择动作
+
+3. dreaming / imagination
+   用 world model 生成模拟经验，减少真实环境试错
+```
+
+最小循环：
+
+```text
+real interaction:
+  s_t -> choose a_t -> observe s_{t+1}, r_t
+  update world model with prediction error
+  update policy/value with real transition
+
+dreaming:
+  sample internal/remembered state
+  rollout imagined transitions using world model
+  update policy/value with imagined transition
+```
+
+这和普通 model-based RL 的区别在于：
+
+```text
+网络主体是 recurrent SNN
+内部状态由 spike、膜电位和循环动力学承载
+作者强调更 biologically plausible 的 experience generation
+```
+
+## 12. world model 学什么
+
+world model 至少要学两个预测：
+
+```text
+state prediction:
+  f(s_t, a_t) -> s_hat_{t+1}
+
+reward prediction:
+  g(s_t, a_t) -> r_hat_t
+```
+
+训练信号：
+
+$$
+\delta^s_t = s_{t+1} - \hat{s}_{t+1}
+$$
+
+$$
+\delta^r_t = r_t - \hat{r}_t
+$$
+
+这些误差比稀疏奖励密集得多。即使没有得到最终奖励，系统每一步也能学习“我对世界的预测哪里错了”。
+
+对你的项目，这意味着：
+
+```text
+prediction_error 用来更新 world model
+reward_error / TD_error 用来更新 value 和 policy
+```
+
+不要把两种误差混成一个信号。
+
+## 13. dreaming 的作用和风险
+
+Dreaming 的价值：
+
+```text
+真实环境交互昂贵或危险
+内部模拟可以产生更多训练样本
+policy 可以在脑内试错
+```
+
+但它有一个核心风险：模型偏差。
+
+```text
+world model 错
+=> dream 轨迹错
+=> policy 在错误经验上训练
+=> 行为越来越偏
+```
+
+所以一个稳健系统需要：
+
+```text
+限制 dream rollout 长度
+优先从可靠状态开始 dream
+用 prediction uncertainty 控制是否 dream
+定期用真实反馈纠偏
+真实经验优先级高于模拟经验
+```
+
+在你的设计里，可以把 dream 当成“巩固和补充”，不要让它完全替代真实交互。
+
+## 14. recurrent SNN 为什么适合这个任务
+
+Model-based RL 需要短期记忆：
+
+```text
+当前观察可能不完整
+动作后果可能延迟
+奖励依赖过去状态
+world model 需要记住上下文
+```
+
+Recurrent SNN 的内部状态天然包含：
+
+```text
+membrane voltage
+spike traces
+recurrent activity
+eligibility traces
+adaptive thresholds
+```
+
+这些都可以承载短期上下文。问题是如何训练。论文的价值是把 SNN 放进 model-based RL + dreaming 的任务框架，让你看到最终要验证的系统形态。
+
+## 15. 原文实验效果怎么读
+
+这类实验的关键不是“dreaming 看起来像生物睡眠”，而是下面几个指标：
+
+```text
+1. 样本效率
+   加入 world model / dreaming 后，真实交互步数是否减少？
+
+2. 任务表现
+   policy 是否比没有 dream 的 baseline 更快达到高奖励？
+
+3. world model 质量
+   预测误差是否足够低，能否支撑有用的模拟？
+
+4. dream 轨迹价值
+   用模拟经验训练是否真的改善真实行为？
+
+5. 适应能力
+   环境变化后，world model 和 policy 是否能重新调整？
+```
+
+你读结果时要特别检查：
+
+```text
+SNN 权重是否在线更新？
+是否使用 surrogate gradient 或 BPTT？
+是否依赖 replay buffer 和 batch 优化？
+```
+
+如果仍然依赖较多深度学习训练技巧，它依然有架构参考价值，但不是最终的局部学习答案。
+
+## 16. 和 e-prop / ETLP 的组合方式
+
+可以把论文里的架构目标，接到底层局部学习规则上：
+
+```text
+world model recurrent weights:
+  用 prediction_error × eligibility_trace 更新
+
+policy/value recurrent weights:
+  用 TD_error 或 reward_error × eligibility_trace 更新
+
+readout weights:
+  可以先用更简单的 delta rule / RLS / supervised signal
+
+dreaming memory:
+  选择高误差、高奖励、高新奇经验进行 replay
+```
+
+这会形成一个更完整的智能体：
+
+```text
+底层：局部突触可塑性
+中层：world model + value/policy
+高层：planning / dreaming / consolidation
+```
+
+## 17. 最小复现实验
+
+建议按下面顺序做，而不是直接复现完整论文：
+
+```text
+阶段 A：只训练 world model
+  gridworld 中预测下一状态
+
+阶段 B：加入 model-free policy
+  用真实 transition 学动作价值
+
+阶段 C：加入 dream transition
+  world model 生成短 rollout，辅助训练 policy
+
+阶段 D：加入局部学习限制
+  把 world model 更新改成 trace × prediction_error
+
+阶段 E：测试环境变化
+  障碍或奖励位置改变，观察恢复速度和遗忘
+```
+
+最重要的对比：
+
+```text
+无 dream
+有 dream 但 world model 不确定性不过滤
+有 dream + 不确定性门控
+纯 model-free
+表格 model-based
+SNN local model-based
+```
+

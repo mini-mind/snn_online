@@ -12,9 +12,11 @@
 
 通用形式：
 
-```text
-delta_w = local_pre_post_trace * modulation_signal
-```
+$$
+\Delta w = e_{local} \cdot M
+$$
+
+也就是：局部 pre/post trace 乘以调制信号。
 
 它是理解 e-prop、ETLP、奖励调制 STDP、神经调质学习和很多 biologically plausible learning 的共同入口。
 
@@ -66,10 +68,13 @@ post spike 先于 pre spike -> 可能减弱
 
 最小形式：
 
-```text
-e_ij(t) = local_trace(pre_i, post_j, state_j)
-delta_w_ij(t) = eta * e_ij(t) * M(t)
-```
+$$
+e_{ij}(t) = \operatorname{local\_trace}(\text{pre}_i, \text{post}_j, h_j)
+$$
+
+$$
+\Delta w_{ij}(t) = \eta M(t) e_{ij}(t)
+$$
 
 其中：
 
@@ -87,9 +92,9 @@ delta_w_ij(t) = eta * e_ij(t) * M(t)
 
 反向传播给每个参数一个精确或近似梯度：
 
-```text
-w = w - eta * dLoss/dw
-```
+$$
+w \leftarrow w - \eta \frac{\partial \mathcal{L}}{\partial w}
+$$
 
 三因子规则不直接计算 `dLoss/dw`，而是用：
 
@@ -233,4 +238,219 @@ def apply_modulation(synapse, reward_error, pred_error, homeostasis):
 ```
 
 这张表会直接变成你后续设计新规则时的对照实验基线。
+
+## 11. 原文核心方法速读：三因子规则不是一个算法，而是一类算法
+
+这篇综述的价值不在于提出一个新公式，而是把很多看起来不同的 SNN 学习规则统一到同一个框架里：
+
+```text
+突触更新 = 局部资格迹 × 第三因子调制
+```
+
+最通用形式可以写成：
+
+$$
+\Delta w_{ij}(t) = \eta M_j(t) e_{ij}(t)
+$$
+
+其中：
+
+```text
+e_ij(t):
+  由突触前神经元 i 和突触后神经元 j 的局部活动产生
+  例如 pre spike trace、post spike trace、膜电位、阈值状态
+
+M_j(t):
+  第三因子，告诉这次局部活动是否应该被强化或削弱
+  可以是奖励误差、监督误差、预测误差、注意、神经调质或稳态信号
+```
+
+如果没有第三因子，规则退化成 Hebbian / STDP：
+
+```text
+只要 pre 和 post 时间上相关，就改权重
+```
+
+加入第三因子后，规则变成：
+
+```text
+pre/post 相关只是“有资格”
+真正是否学习，要等任务/奖励/预测误差信号确认
+```
+
+这就是为什么三因子规则是 e-prop、ETLP、reward-modulated STDP 和很多 neuromorphic learning 的共同语言。
+
+## 12. 综述里的核心分类
+
+你可以把综述里的方法按“第三因子从哪里来”分类。
+
+```text
+1. 奖励调制型
+   第三因子 = reward prediction error
+   用于强化学习、动作选择、探索-利用
+
+2. 监督误差型
+   第三因子 = target - output
+   用于分类、序列预测、teacher forcing
+
+3. 预测误差型
+   第三因子 = actual_next_state - predicted_next_state
+   用于 world model、认知地图、自监督学习
+
+4. 神经调质型
+   第三因子 = dopamine / acetylcholine / serotonin-like signal
+   生物解释更强，但工程上仍可抽象成 modulation channel
+
+5. 稳态调节型
+   第三因子 = network activity too high / too low
+   用于防止全网兴奋、全网沉默或权重爆炸
+```
+
+对你的项目来说，最重要的是不要把第三因子只等同于奖励。一个更像智能体的系统至少应该有：
+
+```text
+reward_error:
+  哪些行为带来价值
+
+prediction_error:
+  哪些内部世界模型预测错了
+
+novelty / uncertainty:
+  哪些经验值得学习更多
+
+homeostasis:
+  网络活动是否稳定
+
+teacher_signal:
+  LLM 或外部教师是否提供高层纠错
+```
+
+## 13. 资格迹的低门槛理解
+
+资格迹不是梯度本身，而是一个“等待被第三因子确认的局部候选信用”。
+
+```text
+pre spike 刚发生
+post 神经元状态被影响
+=> 突触 i -> j 留下一段短期痕迹
+```
+
+如果很快来了正向调制：
+
+$$
+M(t) > 0 \Rightarrow \Delta w_{ij} > 0
+$$
+
+最近相关突触被增强。
+
+如果来了负向调制：
+
+$$
+M(t) < 0 \Rightarrow \Delta w_{ij} < 0
+$$
+
+最近相关突触被削弱。
+
+如果没有调制：
+
+$$
+M(t) \approx 0
+$$
+
+痕迹逐渐衰减，长期权重不变。
+
+这解决了一个关键问题：奖励或错误往往延迟到来，但突触活动发生在更早时刻。资格迹把这段时间桥接起来。
+
+## 14. 和反向传播的真正差别
+
+反向传播要做的是：
+
+```text
+为每个参数计算尽可能准确的 dLoss/dw
+```
+
+三因子规则做的是：
+
+```text
+让每个突触自己记录局部“我可能有关”
+再由少量第三因子广播“这件事好/坏/错/新奇”
+```
+
+它不是免费午餐。代价是：
+
+```text
+梯度更粗糙
+信用分配更不精确
+需要调制信号设计
+容易受无关突触污染
+```
+
+优势是：
+
+```text
+在线
+局部
+事件驱动
+适合 neuromorphic hardware
+更接近生物突触可塑性
+```
+
+所以三因子规则不是“比 BP 更强”，而是换了约束条件：在不能使用全局反传时，仍然保留任务驱动学习能力。
+
+## 15. 综述里的实验效果应该怎么读
+
+作为综述，它本身不是一篇统一实验论文。你读它时应该把实验结论整理成一张方法地图：
+
+```text
+reward-modulated STDP:
+  在简单奖励任务可行
+  但奖励稀疏时信用分配困难
+
+e-prop:
+  更接近 BPTT 梯度分解
+  适合 recurrent SNN 和延迟时序任务
+
+surrogate-gradient + local approximation:
+  性能通常更好
+  但局部性/生物合理性较弱
+
+predictive / self-supervised three-factor rules:
+  更适合 world model
+  但工程验证通常比分类任务复杂
+
+neuromorphic hardware rules:
+  计算和存储更现实
+  但算法表达能力受硬件限制
+```
+
+重点不是背每篇论文，而是为你的路线建立筛选标准：
+
+```text
+这条规则的局部 trace 是什么？
+第三因子是什么？
+能否在线？
+是否需要全局误差反传？
+是否能处理延迟奖励/延迟标签？
+是否测试持续学习和遗忘？
+```
+
+## 16. 你可以直接采用的模板
+
+以后读任何 SNN 学习规则，都填这个表：
+
+```text
+方法名：
+学习目标：分类 / 奖励 / 预测 / 控制 / 持续学习
+局部变量：pre spike, post spike, membrane, threshold, trace
+第三因子：reward, error, prediction error, novelty, teacher signal
+更新公式：Delta w = ?
+是否在线：是 / 否
+是否局部：突触局部 / 神经元局部 / 区域广播 / 全局
+是否事件驱动：是 / 否
+实验任务：
+主要效果：
+主要风险：
+```
+
+这会让你不需要读完所有原文，也能快速判断一篇论文是否值得实现。
 

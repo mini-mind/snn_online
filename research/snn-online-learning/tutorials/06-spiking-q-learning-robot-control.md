@@ -42,9 +42,11 @@ update policy/value
 
 Q-learning 学：
 
-```text
-Q(s, a) = 在状态 s 下执行动作 a 的长期价值
-```
+$$
+Q(s, a) = \mathbb{E}\left[\sum_{k=0}^{\infty} \gamma^k r_{t+k} \mid s_t=s, a_t=a\right]
+$$
+
+也就是：在状态 $s$ 下执行动作 $a$ 的长期价值。
 
 策略学习学：
 
@@ -204,4 +206,208 @@ local rule 更新模型和价值
 ## 10. 局限
 
 机器人控制论文往往更关注“能不能用 SNN 做 RL”，而不是“是否发现了替代反向传播的学习规则”。所以它应放在你的阶段 3 评估集，而不是理论核心。
+
+## 11. 原文核心方法速读：把 SNN 放进深度强化学习控制闭环
+
+这篇论文的关键价值是任务形态，而不是底层学习规则革命。它展示的是：
+
+```text
+SNN 可以作为 deep RL agent 的一部分
+在机器人控制任务中表示状态、价值或策略
+```
+
+强化学习闭环是：
+
+```text
+observe state s_t
+choose action a_t
+execute in robot/environment
+receive reward r_t and next state s_{t+1}
+update policy/value
+```
+
+如果用 Q-learning，核心目标是：
+
+$$
+Q(s_t, a_t) \approx r_t + \gamma \max_a Q(s_{t+1}, a)
+$$
+
+TD error：
+
+$$
+\delta_t = r_t + \gamma \max_a Q(s_{t+1}, a) - Q(s_t, a_t)
+$$
+
+在你的局部学习路线里，$\delta_t$ 可以变成第三因子：
+
+$$
+\Delta w_{ij} = \eta e_{ij}(t) \delta_t
+$$
+
+但很多 SNN deep RL 论文并不是这样训练。它们常常仍用 surrogate gradient、ANN-to-SNN conversion 或标准 deep RL 优化器。
+
+## 12. SNN 在机器人 RL 里常见的三种位置
+
+```text
+1. spike encoder
+   把连续状态转成 spike train
+   后面的 learner 可能仍是 ANN/RL 算法
+
+2. Q network / policy network
+   SNN 直接输出动作价值或动作概率
+   训练可能使用 surrogate gradient
+
+3. low-level controller
+   SNN 产生运动控制信号
+   上层 RL 决定目标或动作模式
+```
+
+对你的项目，最有价值的是第二和第三种，尤其是：
+
+```text
+SNN 内部权重能否在交互中持续更新？
+动作选择错误后，奖励误差能否调制早先的资格迹？
+```
+
+如果 SNN 只是一个静态 encoder，意义就比较有限。
+
+## 13. 机器人控制为什么比分类难
+
+分类任务：
+
+```text
+输入样本固定
+标签明确
+错误不改变下一次输入
+```
+
+机器人控制：
+
+```text
+动作会改变未来输入
+奖励可能延迟
+状态可能部分可观测
+错误动作会带来代价
+探索本身有风险
+```
+
+所以它能暴露局部学习规则的真实问题：
+
+```text
+信用分配
+动作门控
+稳定探索
+灾难性遗忘
+适应环境变化
+```
+
+这就是为什么这篇论文适合放在阶段 3：它告诉你最终应该把学习规则放到什么任务里检验。
+
+## 14. 原文实验效果怎么读
+
+读这类论文结果时，不要只看 reward 曲线是否上升。要拆开看：
+
+```text
+1. 控制性能
+   是否能完成到达、避障、平衡、机械臂控制等任务？
+
+2. 与 ANN baseline 比较
+   SNN 是否接近或超过同规模 ANN？
+   比较是否公平？
+
+3. 能耗/稀疏性
+   spike 活动是否真的减少计算？
+   是否估算能耗或事件数量？
+
+4. 训练方式
+   是在线局部学习，还是 surrogate gradient / deep RL optimizer？
+
+5. 迁移与鲁棒性
+   任务变化、噪声、动力学变化时是否仍稳定？
+```
+
+如果论文显示 SNN 在机器人任务中能达到不错表现，说明：
+
+```text
+SNN 作为控制网络是可行的
+```
+
+但它不自动说明：
+
+```text
+在线局部学习问题已经解决
+```
+
+这两个结论必须分开。
+
+## 15. 如何把它改造成你的实验平台
+
+你可以借用机器人 RL 的任务，但替换训练规则。
+
+```text
+原论文常见做法：
+  SNN + surrogate gradient / deep RL training
+
+你的版本：
+  recurrent SNN + eligibility trace
+  TD_error / reward_error 作为第三因子
+  prediction_error 更新 world model
+  gate 负责动作选择
+```
+
+最小动作闭环：
+
+```text
+state_encoder -> recurrent SNN -> Q/action readout -> action
+reward -> TD_error -> modulate eligibility traces
+next_state -> prediction_error -> update world model
+```
+
+这样机器人论文就从“结果参考”变成你的“评估任务来源”。
+
+## 16. 最小复现实验路线
+
+建议不要直接上复杂机械臂：
+
+```text
+1. bandit
+   没有状态转移，只测 reward modulation
+
+2. gridworld
+   有状态转移和延迟奖励，动作离散
+
+3. cartpole
+   连续状态，离散动作，反馈密集
+
+4. simple reacher
+   连续控制或离散化控制，接近机器人任务
+```
+
+每个阶段都记录：
+
+```text
+平均回报
+学习速度
+spike rate
+权重更新次数
+环境变化后的恢复速度
+旧任务遗忘
+```
+
+## 17. 你真正要从这篇拿走什么
+
+这篇不是你的底层算法答案，而是一个提醒：
+
+```text
+如果学习规则不能闭环控制动作
+它还只是表征学习或分类学习
+```
+
+所以阶段 3 的目标应该是：
+
+```text
+把 local trace × modulation 放进一个真的 observe-act-learn loop
+```
+
+而不是只在静态数据集上刷准确率。
 

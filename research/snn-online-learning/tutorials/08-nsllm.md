@@ -158,3 +158,172 @@ NSLLM 值得收藏，但不要把它排在 e-prop、三因子学习、ETLP、认
 局部学习规则 > 预测学习 > 动作门控 > LLM bootstrap
 ```
 
+## 9. 原文核心方法速读：NSLLM 是 neuromorphic 化 LLM，不是在线突触学习答案
+
+NSLLM 这类工作的核心问题是：
+
+```text
+能否把 LLM 的表示、注意力或推理过程改造成更适合 neuromorphic / spiking 计算的形式？
+```
+
+它通常关注：
+
+```text
+spike encoding:
+  token 或 embedding 如何变成 spike/event 表示
+
+spiking attention / sparse sequence computation:
+  如何减少 Transformer 注意力的高成本
+
+neuromorphic deployment:
+  如何让模型更适配低功耗事件驱动硬件
+
+LLM capability retention:
+  改成 spiking/neuromorphic 后，语言能力损失多少
+```
+
+这和“局部在线学习规则”是不同问题。
+
+## 10. 你应该如何翻译它的方法
+
+可以把 NSLLM 看成一个三层转换问题：
+
+```text
+表示层：
+  token / embedding -> spike-like representation
+
+计算层：
+  dense attention / MLP -> sparse or event-driven computation
+
+部署层：
+  GPU-style dense inference -> neuromorphic-friendly inference
+```
+
+但你的核心问题在第四层：
+
+```text
+学习层：
+  推理时是否根据新经验局部更新权重？
+```
+
+很多 NSLLM 类论文重点在前三层，不在第四层。
+
+## 11. 实验效果应该怎么读
+
+读 NSLLM 结果时，先看常规 LLM 指标：
+
+```text
+语言理解/生成 benchmark
+困惑度或准确率
+长上下文表现
+推理延迟、吞吐、能耗估计
+稀疏率或 spike rate
+```
+
+然后再看对你更关键的指标：
+
+```text
+推理时是否学习？
+是否有 continual learning？
+是否测试任务切换后的遗忘？
+是否有局部可塑性规则？
+是否能和外部 SNN learner 交换事件流或调制信号？
+```
+
+如果论文只证明 neuromorphic LLM 可以保持部分语言能力并提高效率，那么它的结论是：
+
+```text
+LLM 可以更事件驱动/低功耗
+```
+
+不是：
+
+```text
+LLM 已经具备生物式在线学习能力
+```
+
+## 12. 它对阶段 4 的真正价值
+
+你的阶段 4 不是让 SNN 变成 LLM，而是：
+
+```text
+LLM 作为 teacher / scaffold / evaluator
+SNN 作为 online learner
+```
+
+NSLLM 的价值在于降低接口成本：
+
+```text
+如果 LLM 输出本身更接近事件流
+adapter 就更容易把语言反馈转成 modulation
+
+如果 LLM 推理更省能耗
+长期 bootstrap 实验成本更低
+
+如果 LLM 能处理长交互记录
+它可以帮助整理经验，但不应替代 SNN 的权重学习
+```
+
+## 13. 一个可用的 NSLLM-SNN 组合
+
+```text
+NSLLM / LLM teacher:
+  读任务描述
+  解释失败原因
+  给出高层注意提示
+  生成稀疏评价
+
+adapter:
+  把文本压缩成少量连续/离散调制通道
+
+SNN learner:
+  接收环境事件流
+  用 local trace × modulation 更新权重
+  产生动作或预测
+```
+
+调制通道可以是：
+
+```text
+reward_hint:
+  这次行为总体好坏
+
+attention_hint:
+  哪些输入维度更重要
+
+goal_context:
+  当前任务目标
+
+risk_penalty:
+  哪些动作危险
+
+novelty_hint:
+  是否值得快速学习
+```
+
+不要让 LLM 直接输出每个突触的更新量。那会破坏局部学习假设。
+
+## 14. 读这类论文后的判断标准
+
+```text
+如果它解决的是推理效率：
+  作为阶段 4 成本优化参考
+
+如果它解决的是 spike/token 表示桥接：
+  作为 adapter 设计参考
+
+如果它提出推理时局部权重更新：
+  才可能进入阶段 1/2 核心资料
+
+如果它只是把 ANN/LLM 蒸馏成 SNN：
+  只能作为工程参考，不是新学习规则
+```
+
+最终你要守住边界：
+
+```text
+LLM 提供语义和反馈
+SNN 负责在线学习和环境适应
+局部规则决定权重怎么变
+```
+
