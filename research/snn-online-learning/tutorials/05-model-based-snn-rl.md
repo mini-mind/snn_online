@@ -8,9 +8,21 @@
 
 ## 一句话理解
 
-这篇论文研究的是：**让 recurrent SNN 学一个世界模型，再用这个世界模型生成模拟经验来训练策略，从而提高强化学习样本效率。**
+这项工作的核心问题是：**让 recurrent SNN 学一个世界模型，再用这个世界模型生成模拟经验来训练策略，从而提高强化学习样本效率。**
 
 它对应你的阶段 2 到阶段 3 的过渡：从预测世界到用预测帮助行动。
+
+## 研究者使用定位
+
+本文把 model-based SNN RL 当成系统架构模板，而不是单纯介绍 dreaming：
+
+```text
+入门：理解 world model、policy、dreaming 的分工
+掌握：区分 prediction error、reward error 和 TD error
+熟练：能识别 dream rollout 的模型偏差和纠偏机制
+精通：能设计 local plasticity + replay/dream + consolidation 的学习系统
+```
+
 
 ## 1. Model-free RL 和 model-based RL 的区别
 
@@ -113,11 +125,11 @@ recurrent SNN 适合时序任务，因为它有内部状态：
 - 产生动作策略。
 - 用局部/近似规则持续更新。
 
-## 5. 这篇论文对你的项目的关键启发
+## 5. 这项工作对系统设计的关键启发
 
 你的系统不能只有“在线学习”，还需要“经验管理”。
 
-建议把学习分成三层：
+可把学习分成三层：
 
 ```text
 fast online plasticity:
@@ -157,7 +169,7 @@ SNN 只模仿 LLM 输出
 
 ## 7. 需要重点审查的地方
 
-读这篇时要问：
+研究者检查点：
 
 1. world model 是如何训练的？
 2. policy 是如何训练的？
@@ -184,7 +196,7 @@ memory sampling strategy
 
 也就是说，不确定时少 dream；真实反馈和模拟反馈冲突时，以真实反馈为准。
 
-## 9. 建议复现实验
+## 9. 最小研究原型
 
 阶段化复现：
 
@@ -212,9 +224,9 @@ memory sampling strategy
 - 阶段 3：policy 和 action selection 进入系统。
 - 阶段 4：LLM 可以作为任务生成器、教师和语义评价器，但不应替代 world model 学习。
 
-## 11. 原文核心方法速读：SNN 同时学模型、策略，并用 dream 扩增经验
+## 11. 研究者压缩模型：SNN 同时学模型、策略，并用 dream 扩增经验
 
-这篇论文的核心是把 model-based RL 的三件事放进 recurrent spiking network 语境：
+这篇工作的可迁移核心是把 model-based RL 的三件事放进 recurrent spiking network 语境：
 
 ```text
 1. world model
@@ -336,7 +348,7 @@ adaptive thresholds
 
 这些都可以承载短期上下文。问题是如何训练。论文的价值是把 SNN 放进 model-based RL + dreaming 的任务框架，让你看到最终要验证的系统形态。
 
-## 15. 原文实验效果怎么读
+## 15. 实验结论与可迁移判断
 
 这类实验的关键不是“dreaming 看起来像生物睡眠”，而是下面几个指标：
 
@@ -357,7 +369,7 @@ adaptive thresholds
    环境变化后，world model 和 policy 是否能重新调整？
 ```
 
-你读结果时要特别检查：
+分析结果时要特别检查：
 
 ```text
 SNN 权重是否在线更新？
@@ -369,7 +381,7 @@ SNN 权重是否在线更新？
 
 ## 16. 和 e-prop / ETLP 的组合方式
 
-可以把论文里的架构目标，接到底层局部学习规则上：
+可以把架构目标接到底层局部学习规则上：
 
 ```text
 world model recurrent weights:
@@ -393,9 +405,9 @@ dreaming memory:
 高层：planning / dreaming / consolidation
 ```
 
-## 17. 最小复现实验
+## 17. 最小研究原型
 
-建议按下面顺序做，而不是直接复现完整论文：
+按下面顺序做研究原型，而不是直接复刻完整系统：
 
 ```text
 阶段 A：只训练 world model

@@ -11,6 +11,18 @@ NSLLM 这类工作关注的是：**如何把大语言模型与 neuromorphic / sp
 
 它不是“在线局部学习规则”的直接答案，但对你构建 LLM bootstrap 脚手架有参考价值。
 
+## 研究者使用定位
+
+本文把 NSLLM 当成 neuromorphic LLM 与 SNN learner 的接口资料：
+
+```text
+入门：区分 neuromorphic inference 和 online synaptic learning
+掌握：把 token/embedding 到 spike/event/modulation 的桥接问题拆开
+熟练：能判断一篇 NSLLM 工作解决的是表示、计算、部署还是学习
+精通：能设计 LLM teacher -> adapter -> SNN modulation 的跨系统闭环
+```
+
+
 ## 1. Neuromorphic LLM 想解决什么
 
 传统 LLM 推理消耗大量矩阵乘法、显存和能耗。Neuromorphic / spiking LLM 方向尝试把模型运行方式改造得更像事件驱动系统：
@@ -39,7 +51,7 @@ Neuromorphic LLM 问：
 一个大语言模型如何用 spike/neuromorphic 方式表示和运行？
 ```
 
-所以判断一篇 NSLLM 类论文是否对你的主线有用，要看它是否提出：
+所以判断一项 NSLLM 类工作是否对你的主线有用，要看它是否提出：
 
 - 推理时权重更新。
 - 局部学习规则。
@@ -79,7 +91,7 @@ explanation -> attention mask
 
 LLM 的离散 token 序列和 SNN 的时间 spike 序列都带有事件结构。两者之间可能有更自然的桥接方式。
 
-## 4. 你应该如何避免路线漂移
+## 4. 路线边界
 
 NSLLM 容易让项目从“学习规则研究”漂到“大模型架构研究”。要保持边界：
 
@@ -96,7 +108,7 @@ SNN:
 
 只要 LLM 变成主要能力来源，SNN 只是模仿或压缩 LLM，项目就变成蒸馏工程，而不是新学习算法研究。
 
-## 5. 读这类论文时的检查表
+## 5. 研究者检查表
 
 ```text
 模型是否在推理时更新本体权重？
@@ -158,7 +170,7 @@ NSLLM 值得收藏，但不要把它排在 e-prop、三因子学习、ETLP、认
 局部学习规则 > 预测学习 > 动作门控 > LLM bootstrap
 ```
 
-## 9. 原文核心方法速读：NSLLM 是 neuromorphic 化 LLM，不是在线突触学习答案
+## 9. 研究者压缩模型：NSLLM 是 neuromorphic 化 LLM，不是在线突触学习答案
 
 NSLLM 这类工作的核心问题是：
 
@@ -184,7 +196,7 @@ LLM capability retention:
 
 这和“局部在线学习规则”是不同问题。
 
-## 10. 你应该如何翻译它的方法
+## 10. 跨领域翻译方式
 
 可以把 NSLLM 看成一个三层转换问题：
 
@@ -206,11 +218,11 @@ LLM capability retention:
   推理时是否根据新经验局部更新权重？
 ```
 
-很多 NSLLM 类论文重点在前三层，不在第四层。
+很多 NSLLM 类工作重点在前三层，不在第四层。
 
-## 11. 实验效果应该怎么读
+## 11. 实验结论与可迁移判断
 
-读 NSLLM 结果时，先看常规 LLM 指标：
+分析 NSLLM 结果时，先看常规 LLM 指标：
 
 ```text
 语言理解/生成 benchmark
@@ -230,7 +242,7 @@ LLM capability retention:
 是否能和外部 SNN learner 交换事件流或调制信号？
 ```
 
-如果论文只证明 neuromorphic LLM 可以保持部分语言能力并提高效率，那么它的结论是：
+如果工作只证明 neuromorphic LLM 可以保持部分语言能力并提高效率，那么它的结论是：
 
 ```text
 LLM 可以更事件驱动/低功耗
@@ -303,7 +315,7 @@ novelty_hint:
 
 不要让 LLM 直接输出每个突触的更新量。那会破坏局部学习假设。
 
-## 14. 读这类论文后的判断标准
+## 14. 研究者判断标准
 
 ```text
 如果它解决的是推理效率：
