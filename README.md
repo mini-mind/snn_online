@@ -60,7 +60,17 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 
 ## 研究资料
 
-调研索引和论文教程放在：
+研究手册与最小实验入口：
 
-- [SNN online learning index](research/snn-online-learning/INDEX.md)
+- [Learning docs](docs/learning/INDEX.md)
+- [ETLP continuous toy](src/etlp_continuous_toy.py)
 
+## 最小实验
+
+当前优先实现 ETLP-like 连续输入 toy，用少量代码观察局部三因子更新：
+
+```bash
+python src/etlp_continuous_toy.py
+```
+
+说明见 [src/README.md](src/README.md)。

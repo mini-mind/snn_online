@@ -451,3 +451,26 @@ ETLP 最值得借鉴的不是某个固定公式，而是设计纪律：
 全局反传的实现
 ```
 
+
+
+## 18. 本项目最小代码原型
+
+当前仓库提供一个连续输入 ETLP-like toy：
+
+- Code: [../../src/etlp_continuous_toy.py](../../src/etlp_continuous_toy.py)
+- Notes: [../../src/README.md](../../src/README.md)
+
+它保留 ETLP 最关键的三因子形式：
+
+$$
+\Delta w_{ij} = \eta \cdot \bar{x}_i(t) \cdot f(V_j(t)) \cdot T_j(t)
+$$
+
+和原始 ETLP 相比，这个 toy 有意做了两点简化：
+
+```text
+1. 输入不是 binary spike，而是连续时间序列特征。
+2. 目标不是硬件复刻，而是让研究者直接读代码理解局部更新闭环。
+```
+
+这更接近本项目设想：未来环境输入可能来自连续传感器、latent embedding 或 LLM adapter，而不一定是原生 spike event。
