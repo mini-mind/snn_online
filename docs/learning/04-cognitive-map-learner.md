@@ -453,3 +453,39 @@ next-state prediction error
 
 如果这个实验跑通，你就有了从“局部可塑性”走向“可规划世界模型”的最小桥梁。
 
+
+
+## 19. 本项目组合代码原型
+
+当前仓库提供一个 Cognitive Map + ETLP-like 组合 toy：
+
+- Code: [../../src/cognitive_map_etlp_toy.py](../../src/cognitive_map_etlp_toy.py)
+- Notes: [../../src/README.md](../../src/README.md)
+
+它把 Cognitive Map Learner 的核心目标：
+
+```text
+state + action -> next_state
+```
+
+压缩成一个动作条件 transition model，并用局部预测误差更新：
+
+$$
+\Delta W_a[o, i] = \eta \cdot \delta^{pred}_o(t) \cdot \bar{x}_i(t)
+$$
+
+这个原型的关键点不是分类准确率，而是三件事能否同时上升：
+
+```text
+next-state prediction quality
+decoded transition accuracy
+planning success with learned graph
+```
+
+这正好连接本项目的两个底层方向：
+
+```text
+ETLP-like local plasticity
++
+Cognitive Map / world model / planning
+```

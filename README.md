@@ -64,6 +64,7 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 
 - [Learning docs](docs/learning/INDEX.md)
 - [ETLP continuous toy](src/etlp_continuous_toy.py)
+- [Cognitive Map + ETLP toy](src/cognitive_map_etlp_toy.py)
 
 ## 最小实验
 
@@ -71,6 +72,7 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 
 ```bash
 python src/etlp_continuous_toy.py
+python src/cognitive_map_etlp_toy.py
 ```
 
 说明见 [src/README.md](src/README.md)。

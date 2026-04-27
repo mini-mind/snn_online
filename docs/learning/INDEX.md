@@ -101,4 +101,5 @@
 ## 代码原型
 
 - [ETLP continuous toy](../../src/etlp_continuous_toy.py)：连续输入、LIF-like 输出神经元、`pre_trace × post_membrane_factor × teaching_signal` 在线局部更新。
+- [Cognitive Map + ETLP toy](../../src/cognitive_map_etlp_toy.py)：用 prediction error 的局部三因子更新学习 gridworld 转移图，并用 learned graph 做 planning。
 - [src README](../../src/README.md)：运行方式与核心公式说明。
