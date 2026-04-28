@@ -58,21 +58,15 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 - 只做仿生命名：脑区类比应服务于工程分工，不能替代可验证的算法假设。
 - 评估不清：必须用客观任务测试在线学习、局部性、抗遗忘、长程信用分配和样本效率。
 
-## 研究资料
+## 项目入口
 
-研究手册与最小实验入口：
+- [Learning docs](docs/learning/INDEX.md)：跨领域研究手册与论文方法压缩。
+- [Minimal experiments](src/README.md)：可直接运行的纯 Python 原型。
 
-- [Learning docs](docs/learning/INDEX.md)
-- [ETLP continuous toy](src/etlp_continuous_toy.py)
-- [Cognitive Map + ETLP toy](src/cognitive_map_etlp_toy.py)
-
-## 最小实验
-
-当前优先实现 ETLP-like 连续输入 toy，用少量代码观察局部三因子更新：
+## 快速运行
 
 ```bash
 python src/etlp_continuous_toy.py
 python src/cognitive_map_etlp_toy.py
+python src/rsnn_point_robot_toy.py
 ```
-
-说明见 [src/README.md](src/README.md)。

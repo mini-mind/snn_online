@@ -423,3 +423,17 @@ spike rate
 
 而不是只在静态数据集上刷准确率。
 
+## 18. 本项目代码对应
+
+- R-SNN core: [../../src/rsnn.py](../../src/rsnn.py)
+- Environment: [../../src/point_robot_env.py](../../src/point_robot_env.py)
+- Training loop: [../../src/rsnn_point_robot_toy.py](../../src/rsnn_point_robot_toy.py)
+- Notes: [../../src/README.md](../../src/README.md)
+
+该原型把前面的 ETLP-like 局部更新和 Cognitive Map world model，接到 `observe -> act -> learn` 控制闭环：
+
+```text
+continuous observation -> R-SNN recurrent state -> action
+prediction_error -> world model readout
+TD_error -> action-value readout
+```
