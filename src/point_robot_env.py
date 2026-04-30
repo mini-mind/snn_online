@@ -1,4 +1,14 @@
-"""A dependency-free 2D point robot control environment."""
+"""无第三方依赖的二维点机器人控制环境。
+
+环境只保留最小控制闭环所需的元素：
+
+1. 位置、速度和目标点；
+2. 有阻尼的离散动作加速度；
+3. 兼顾“靠近目标”和“动作代价”的奖励函数。
+
+它不追求物理逼真度，而是为在线学习算法提供一个足够紧凑、可快速迭代的
+控制任务。
+"""
 
 from __future__ import annotations
 
@@ -19,6 +29,8 @@ ACTION_ACCEL = {
 
 @dataclass
 class PointRobotConfig:
+    """点机器人环境超参数。"""
+
     world_size: float = 1.0
     max_steps: int = 60
     acceleration: float = 0.06
@@ -30,7 +42,15 @@ class PointRobotConfig:
 
 
 class PointRobotEnv:
+    """二维平面上的点机器人任务。
+
+    状态由机器人位置、速度以及目标位置组成。每一步接收一个离散动作，
+    将其转成加速度，再结合速度衰减更新动力学。环境边界使用简单的夹紧与
+    反弹处理，以避免状态无限发散。
+    """
+
     def __init__(self, config: PointRobotConfig, rng: random.Random | None = None) -> None:
+        """创建环境并立即采样一个初始状态。"""
         self.config = config
         self.rng = rng or random.Random(config.seed)
         self.x = 0.0
@@ -43,6 +63,7 @@ class PointRobotEnv:
         self.reset()
 
     def reset(self) -> list[float]:
+        """重置机器人与目标位置，并返回初始观测。"""
         self.x = self.rng.uniform(-0.8, 0.8)
         self.y = self.rng.uniform(-0.8, 0.8)
         self.vx = 0.0
@@ -56,9 +77,16 @@ class PointRobotEnv:
         return self.observation()
 
     def step(self, action_index: int) -> tuple[list[float], float, bool]:
+        """执行一步环境转移。
+
+        返回:
+            一个三元组 `(observation, reward, done)`。
+        """
         action = ACTIONS[action_index]
         old_distance = self.distance_to_goal()
         ax, ay = ACTION_ACCEL[action]
+
+        # 动力学模型非常简单：速度先衰减，再叠加动作加速度，最后做最大速度裁剪。
         self.vx = self.config.velocity_decay * self.vx + self.config.acceleration * ax
         self.vy = self.config.velocity_decay * self.vy + self.config.acceleration * ay
         speed = math.sqrt(self.vx * self.vx + self.vy * self.vy)
@@ -67,6 +95,7 @@ class PointRobotEnv:
             self.vx *= scale
             self.vy *= scale
 
+        # 位置更新后做边界约束；触边时给速度一个反向衰减，模拟简化碰撞。
         self.x = clamp(self.x + self.vx, -self.config.world_size, self.config.world_size)
         self.y = clamp(self.y + self.vy, -self.config.world_size, self.config.world_size)
         if abs(self.x) >= self.config.world_size:
@@ -78,6 +107,7 @@ class PointRobotEnv:
         new_distance = self.distance_to_goal()
         reached = new_distance <= self.config.goal_radius
         timeout = self.steps >= self.config.max_steps
+        # 奖励以“向目标前进的距离改善”为主，同时引入动作成本，避免无意义抖动。
         reward = (old_distance - new_distance) * 4.0 - self.config.action_cost
         if action == "stay":
             reward -= self.config.action_cost
@@ -88,6 +118,7 @@ class PointRobotEnv:
         return self.observation(), reward, reached or timeout
 
     def observation(self) -> list[float]:
+        """构造供智能体使用的连续观测向量。"""
         dx = self.goal_x - self.x
         dy = self.goal_y - self.y
         distance = math.sqrt(dx * dx + dy * dy)
@@ -105,10 +136,12 @@ class PointRobotEnv:
         ]
 
     def distance_to_goal(self) -> float:
+        """计算当前位置到目标点的欧氏距离。"""
         dx = self.goal_x - self.x
         dy = self.goal_y - self.y
         return math.sqrt(dx * dx + dy * dy)
 
 
 def clamp(value: float, low: float, high: float) -> float:
+    """将标量限制在 `[low, high]` 区间内。"""
     return max(low, min(high, value))

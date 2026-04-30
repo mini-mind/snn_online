@@ -1,16 +1,17 @@
-"""R-SNN point robot control toy.
+"""R-SNN 点机器人控制玩具实验。
 
-Run:
+运行方式:
     python src/rsnn_point_robot_toy.py
 
-The agent combines:
+该智能体组合了四个最小部件：
 
-- recurrent spiking hidden state
-- local linear world model readout trained by prediction error
-- local action-value readout trained by TD error
-- one-step model-based action scoring for control
+1. 循环脉冲隐状态；
+2. 用预测误差训练的局部线性 world model 读出头；
+3. 用 TD 误差训练的动作价值读出头；
+4. 基于一步前瞻的 model-based 动作打分。
 
-This is a small control scaffold, not a benchmark implementation.
+这不是基准实现，而是一个用于验证“在线局部学习 + 简化规划”能否形成控制
+闭环的实验脚手架。
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from rsnn import RSNNConfig, RecurrentSpikingNetwork, clamp, dot
 
 @dataclass
 class AgentConfig:
+    """点机器人智能体训练配置。"""
+
     episodes: int = 320
     eval_every: int = 40
     eval_episodes: int = 60
@@ -42,7 +45,19 @@ class AgentConfig:
 
 
 class RSNNPointRobotAgent:
+    """基于循环脉冲隐状态的点机器人控制智能体。
+
+    结构上分三层：
+
+    1. R-SNN 负责把时序观测压缩成动态特征；
+    2. value head 估计每个动作的动作价值；
+    3. world model head 预测执行动作后的下一步观测。
+
+    动作选择时同时参考价值估计与一步模型预测，形成简化的 model-based control。
+    """
+
     def __init__(self, obs_dim: int, n_actions: int, config: AgentConfig, rng: random.Random) -> None:
+        """初始化 R-SNN、本地 world model 读出头和价值读出头。"""
         self.config = config
         self.n_actions = n_actions
         self.obs_dim = obs_dim
@@ -72,20 +87,30 @@ class RSNNPointRobotAgent:
         ]
 
     def reset_state(self) -> None:
+        """重置 episode 内的循环隐状态。"""
         self.rsnn.reset_state()
 
     def observe(self, observation: list[float], modulation: float = 0.0) -> list[float]:
+        """将环境观测送入 R-SNN，并返回归一化特征。"""
         return normalize_features(self.rsnn.step(observation, modulation=modulation))
 
     def q_values(self, features: list[float]) -> list[float]:
+        """根据当前隐特征计算每个动作的价值。"""
         return [dot(weights, features) for weights in self.value_weights]
 
     def predict_next(self, observation: list[float], features: list[float], action: int) -> list[float]:
+        """预测某个动作执行后的下一步观测。"""
         predicted_delta = [dot(row, features) for row in self.model_weights[action]]
         predicted = [value + delta for value, delta in zip(observation, predicted_delta)]
         return clamp_observation(predicted)
 
     def choose_action(self, observation: list[float], features: list[float], epsilon: float, learn: bool) -> int:
+        """按 epsilon-greedy 方式选择动作。
+
+        贪心分支里，动作分数同时考虑：
+        - 预测下一状态是否更接近目标；
+        - 当前价值头给出的动作价值。
+        """
         if learn and self.rng.random() < epsilon:
             return self.rng.randrange(self.n_actions)
         q_values = self.q_values(features)
@@ -93,6 +118,8 @@ class RSNNPointRobotAgent:
         for action in range(self.n_actions):
             predicted_next = self.predict_next(observation, features, action)
             predicted_distance = max(0.0, predicted_next[8])
+
+            # model score 偏向“朝目标更近”的动作，value score 则保留长期回报估计。
             score = -self.config.model_score_weight * predicted_distance
             score += self.config.value_score_weight * q_values[action]
             if ACTIONS[action] == "stay":
@@ -101,8 +128,11 @@ class RSNNPointRobotAgent:
         return argmax(scores)
 
     def learn_world_model(self, observation: list[float], features: list[float], action: int, next_observation: list[float]) -> float:
+        """用当前转移样本更新一步 world model，并返回预测 MSE。"""
         predicted = self.predict_next(observation, features, action)
         errors = [target - output for target, output in zip(next_observation, predicted)]
+
+        # 这里使用最直接的局部线性误差校正：每个输出维都按误差和隐藏特征更新。
         for output_index, error in enumerate(errors):
             row = self.model_weights[action][output_index]
             for hidden_index, feature in enumerate(features):
@@ -111,6 +141,7 @@ class RSNNPointRobotAgent:
         return mean_squared(errors)
 
     def learn_value(self, features: list[float], action: int, td_error: float) -> None:
+        """按 TD 误差更新指定动作的价值读出头。"""
         row = self.value_weights[action]
         clipped_error = clamp(td_error, -2.0, 2.0)
         for hidden_index, feature in enumerate(features):
@@ -125,6 +156,7 @@ def run_episode(
     episode: int,
     learn: bool,
 ) -> tuple[float, bool, float, int]:
+    """运行单个 episode，并在需要时执行在线学习。"""
     observation = env.reset()
     agent.reset_state()
     total_reward = 0.0
@@ -141,11 +173,15 @@ def run_episode(
         next_features = agent.observe(next_observation)
         prediction_mse = agent.learn_world_model(observation, features, action, next_observation) if learn else 0.0
 
+        # 价值学习仍然使用标准一步 TD 目标，但隐状态来自脉冲网络。
         q_current = agent.q_values(features)[action]
         q_next = max(agent.q_values(next_features))
         td_error = reward + (0.0 if done else config.gamma * q_next) - q_current
         if learn:
             agent.learn_value(features, action, td_error)
+
+            # 递归连接的调制信号同时参考 TD 误差与模型预测误差：
+            # 奖励偏高时鼓励当前递归动力学，模型误差过大时则抑制。
             modulation = clamp(0.35 * td_error - 0.15 * prediction_mse, -1.0, 1.0)
             agent.rsnn.apply_recurrent_modulation(modulation)
 
@@ -160,6 +196,7 @@ def run_episode(
 
 
 def evaluate_agent(agent: RSNNPointRobotAgent, config: AgentConfig, env_config: PointRobotConfig, seed: int) -> tuple[float, float, float]:
+    """在关闭学习的条件下评估智能体平均表现。"""
     rng = random.Random(seed)
     rewards = []
     successes = 0
@@ -174,6 +211,7 @@ def evaluate_agent(agent: RSNNPointRobotAgent, config: AgentConfig, env_config: 
 
 
 def random_baseline(config: AgentConfig, env_config: PointRobotConfig, seed: int) -> tuple[float, float, float]:
+    """计算随机策略基线，便于观察训练是否真正带来控制增益。"""
     rng = random.Random(seed)
     rewards = []
     successes = 0
@@ -195,6 +233,7 @@ def random_baseline(config: AgentConfig, env_config: PointRobotConfig, seed: int
 
 
 def run(config: AgentConfig, env_config: PointRobotConfig) -> None:
+    """运行训练主循环并定期输出评估指标。"""
     rng = random.Random(config.seed)
     env = PointRobotEnv(env_config, rng)
     agent = RSNNPointRobotAgent(obs_dim=len(env.observation()), n_actions=len(ACTIONS), config=config, rng=rng)
@@ -212,6 +251,7 @@ def run(config: AgentConfig, env_config: PointRobotConfig) -> None:
     )
     print()
 
+    # 窗口统计用于观察最近阶段的训练趋势，避免仅看全局平均掩盖退化。
     reward_window = 0.0
     success_window = 0
     model_error_window = 0.0
@@ -240,11 +280,8 @@ def run(config: AgentConfig, env_config: PointRobotConfig) -> None:
             success_window = 0
             model_error_window = 0.0
             length_window = 0
-
-
-
-
 def normalize_features(values: list[float]) -> list[float]:
+    """将特征向量归一化，控制不同 episode 之间的尺度波动。"""
     norm = math.sqrt(sum(value * value for value in values))
     if norm == 0.0:
         return list(values)
@@ -252,6 +289,7 @@ def normalize_features(values: list[float]) -> list[float]:
 
 
 def clamp_observation(values: list[float]) -> list[float]:
+    """对预测观测做简单裁剪，避免 world model 输出失控。"""
     if len(values) < 10:
         return values
     clipped = list(values)
@@ -262,19 +300,23 @@ def clamp_observation(values: list[float]) -> list[float]:
     return clipped
 
 def epsilon_for_episode(config: AgentConfig, episode: int) -> float:
+    """按线性退火策略计算当前 episode 的探索率。"""
     progress = min(1.0, episode / max(1, config.episodes * 0.75))
     return config.epsilon_start + progress * (config.epsilon_end - config.epsilon_start)
 
 
 def argmax(values: list[float]) -> int:
+    """返回最大值对应索引。"""
     return max(range(len(values)), key=lambda index: values[index])
 
 
 def mean_squared(values: list[float]) -> float:
+    """计算均方值。"""
     return sum(value * value for value in values) / max(1, len(values))
 
 
 def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
+    """解析命令行参数并构造智能体与环境配置。"""
     parser = argparse.ArgumentParser(description="Run the R-SNN point robot toy.")
     parser.add_argument("--episodes", type=int, default=AgentConfig.episodes)
     parser.add_argument("--eval-every", type=int, default=AgentConfig.eval_every)
