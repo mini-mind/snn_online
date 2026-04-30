@@ -50,6 +50,25 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 4. LLM bootstrap 环境
    使用 LLM 作为静态脚手架，为 SNN 学习体提供任务、解释、反馈和复杂语义环境，但避免把研究退化为单纯蒸馏 LLM。
 
+## 与生物脑的差距和迭代指引
+
+当前原型不是“仿真大脑”，而是一个最小脑式在线学习 agent 骨架：有 recurrent spiking state、局部调制更新、世界模型、奖励调制和动作闭环。后续迭代应优先缩小下表中的关键差距。
+
+| 维度 | 当前原型 | 生物脑 | 后续迭代指引 |
+|---|---|---|---|
+| 在线学习 | 交互中更新部分权重 | 持续、本体、多区域可塑 | 保持 online-first，避免退回离线 batch 训练 |
+| 局部更新 | trace × modulation 的简化三因子规则 | 突触局部变量 + 多神经调质 | 增加区域化 modulation、plasticity gate 和多时间尺度 trace |
+| Spike 动力学 | 小型 LIF-like R-SNN | 丰富神经元类型、振荡和回路动力学 | 加入兴奋/抑制约束、活动稳态和多时间常数神经元 |
+| 预测误差 | world model / cognitive map toy | 多模态、多层级预测 | 把 prediction error 拆成感觉、动作后果和不确定性通道 |
+| 奖励调制 | TD error / reward shaping | 多巴胺等调质系统与动机状态耦合 | 区分 reward、novelty、risk、homeostasis，避免单一全局奖励污染 |
+| 世界模型 | gridworld / point robot 的低维模型 | 多尺度、可组合、可想象的环境模型 | 加入 replay/dream、模型不确定性和反事实 rollout |
+| 动作控制 | 离散动作 point robot | 连续、多关节、多反馈回路 | 引入动作候选生成、基底节式 gate 和连续控制环境 |
+| 记忆系统 | 权重、trace、短期 recurrent state | 海马快速绑定、皮层慢巩固、情景/语义记忆 | 加入 episodic buffer、优先 replay 和慢速 consolidation |
+| 稳定性 | 可跑通 toy，但仍需调参 | 强鲁棒、抗噪声、抗遗忘 | 系统评估分布漂移、任务切换和灾难性遗忘 |
+| 可扩展性 | 纯 Python 小实验 | 大规模稀疏并行系统 | 在保留可解释性的前提下推进稀疏更新和模块化接口 |
+
+阶段性目标不是追求“像脑一样聪明”，而是逐步验证：局部学习规则能否驱动一个 agent 从预测世界走向稳定行动。
+
 ## 关键风险
 
 - 奖励自循环：如果系统自己定义奖励再用奖励训练自己，容易 reward hacking。
