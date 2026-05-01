@@ -425,9 +425,9 @@ spike rate
 
 ## 18. 本项目代码对应
 
-- R-SNN core: [../../src/rsnn.py](../../src/rsnn.py)
-- Environment: [../../src/point_robot_env.py](../../src/point_robot_env.py)
-- Training loop: [../../src/rsnn_point_robot_toy.py](../../src/rsnn_point_robot_toy.py)
+- R-SNN adapter: [../../src/closed_loop/recurrent_spiking.py](../../src/closed_loop/recurrent_spiking.py)
+- Environment: [../../src/closed_loop/point_robot_env.py](../../src/closed_loop/point_robot_env.py)
+- Training loop: [../../src/closed_loop/point_robot_closed_loop.py](../../src/closed_loop/point_robot_closed_loop.py)
 - Notes: [../../src/README.md](../../src/README.md)
 
 该原型把前面的 ETLP-like 局部更新和 Cognitive Map world model，接到 `observe -> act -> learn` 控制闭环：
@@ -437,3 +437,5 @@ continuous observation -> R-SNN recurrent state -> action
 prediction_error -> world model readout
 TD_error -> action-value readout
 ```
+
+这里的实验边界是：`snn_online` 负责任务、读出头和对照脚本；循环脉冲网络执行通过 `recurrent_spiking.py` 接到外部 `dynn`。文档只保留实验接口，不展开 `dynn` 内部实现细节。

@@ -1,7 +1,7 @@
 """Cognitive Map Learner 与 ETLP 风格局部预测的组合玩具实验。
 
 运行方式:
-    python src/cognitive_map_etlp_toy.py
+    python src/toy_learning/cognitive_map_etlp_toy.py
 
 这个脚本组合了项目里反复出现的两个思想：
 

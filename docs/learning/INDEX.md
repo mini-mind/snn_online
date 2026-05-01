@@ -101,6 +101,6 @@
 
 详情见 [src README](../../src/README.md)。
 
-- [ETLP continuous toy](../../src/etlp_continuous_toy.py)
-- [Cognitive Map + ETLP toy](../../src/cognitive_map_etlp_toy.py)
-- [R-SNN point robot toy](../../src/rsnn_point_robot_toy.py)
+- [ETLP continuous toy](../../src/toy_learning/etlp_continuous_toy.py)
+- [Cognitive Map + ETLP toy](../../src/toy_learning/cognitive_map_etlp_toy.py)
+- [R-SNN point robot closed loop](../../src/closed_loop/point_robot_closed_loop.py)

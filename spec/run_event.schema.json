@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://snn-online.local/spec/run_event.schema.json",
+  "title": "RunEventSchema",
+  "description": "append-only 的轻量运行事件协议，供监控、回放索引与离线分析使用。事件本体只保存小摘要，大型数组、轨迹和 trace 必须通过 artifact_refs 引用外部产物。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "event_id",
+    "event_type",
+    "timestamp",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+(\\.[0-9]+)*$"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "一次运行的全局标识。"
+    },
+    "event_id": {
+      "type": "string",
+      "description": "单条事件唯一标识。"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "run_started",
+        "run_finished",
+        "run_failed",
+        "episode_started",
+        "episode_finished",
+        "step",
+        "spike_summary",
+        "state_summary",
+        "weight_update_summary",
+        "modulation_summary",
+        "env_summary",
+        "checkpoint_saved",
+        "warning",
+        "log"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "事件时间戳，建议使用 RFC 3339 UTC 时间。"
+    },
+    "episode_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "step_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["train", "eval", "replay", "debug"]
+    },
+    "payload": {
+      "type": "object",
+      "description": "事件负载。必须保持小而稳定，只允许标量、短字符串、小型对象和少量摘要字段；禁止直接内嵌完整 spike train、权重矩阵、环境轨迹或大数组。",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "maxLength": 4096
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "additionalProperties": true
+          },
+          {
+            "type": "array",
+            "maxItems": 64
+          }
+        ]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "便于前端快速展示的扁平摘要字段。summary 应优先承载监控所需指标。"
+    },
+    "artifact_refs": {
+      "type": "array",
+      "description": "大型 trace、二进制数组、轨迹或检查点片段的引用列表，避免单事件过大。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path"],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "schema": {
+            "type": "string",
+            "description": "引用产物的格式或 schema 标识。"
+          }
+        }
+      }
+    },
+    "size_hint_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "可选事件大小提示。生产方应把单事件控制在小摘要级别。"
+    }
+  }
+}

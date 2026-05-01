@@ -7,5 +7,5 @@
 - 修改应服务于在线学习、局部可塑性、预测学习或动作闭环。
 - 可以补充中文注释和 docstring，但不要用注释替代结构改进。
 - 算法改动应尽量保留“局部更新规则清楚、实验入口直接、指标可打印”。
-- Python 源码改动后，至少运行 `python -m py_compile src/*.py`。
+- Python 源码改动后，至少运行 `python -m compileall src`。
 - 若改动影响实验目标、学习规则或运行方式，同步更新 `README.md` 或 `src/README.md`。

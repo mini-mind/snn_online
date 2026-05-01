@@ -1,7 +1,7 @@
 """连续输入流上的 ETLP 风格局部可塑性玩具实验。
 
 运行方式:
-    python src/etlp_continuous_toy.py
+    python src/toy_learning/etlp_continuous_toy.py
 
 这个脚本刻意做得很小，并且完全无第三方依赖。它不是 ETLP 论文的严格复现，
 而是保留其核心约束的研究玩具：

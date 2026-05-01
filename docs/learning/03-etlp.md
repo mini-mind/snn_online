@@ -453,7 +453,7 @@ ETLP 最值得借鉴的不是某个固定公式，而是设计纪律：
 
 ## 18. 本项目代码对应
 
-- Code: [../../src/etlp_continuous_toy.py](../../src/etlp_continuous_toy.py)
+- Code: [../../src/toy_learning/etlp_continuous_toy.py](../../src/toy_learning/etlp_continuous_toy.py)
 - Notes: [../../src/README.md](../../src/README.md)
 
 该原型把 ETLP-like 更新收敛为连续输入版本：
