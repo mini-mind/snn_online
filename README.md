@@ -79,41 +79,36 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 
 ## 项目定位
 
-当前仓库不再被定义为“统一平台本体”，而是三仓协作体系中的研究与实验项目：
+当前仓库是在线局部学习 SNN 的实验仓：
 
 - `snn_online`：负责研究问题、任务设计、实验编排、对照和报告。
-- `dynn`：负责事件驱动、稀疏连接、局部学习友好的执行引擎。
-- `neuralsoup`：负责拓扑编辑、运行监控、结果回放和交互分析。
-
-三者通过统一协议协作，而不是实现相互依赖。当前仓库是这套体系里的实验发起方与基线项目。
+- `dynn`：作为外部执行引擎，为部分闭环实验提供运行时支持。
 
 ## 项目入口
 
 - [Learning docs](docs/learning/INDEX.md)：跨领域研究手册与论文方法压缩。
 - [Minimal experiments](src/README.md)：当前实验入口、目录边界、运行命令和指标说明。
-- [Platform design](docs/platform_design.md)：跨仓协作边界与协议草案，不代表本仓当前实现全貌。
-- [Platform acceptance](docs/platform_acceptance.md)：跨仓开发的验收口径草案。
-- [Spec drafts](spec/artifact_layout.md)：`ExperimentSpec`、`TopologyIR`、`RunEventSchema` 与产物布局草案。
 
 ## 运行前提
 
-- `toy_learning/` 下两个 toy 实验是本仓自包含脚本，不依赖同级其他仓库。
-- `closed_loop/` 下点机器人实验是当前的 `dynn`-backed 路线。运行这些脚本前，需要本机存在可被 `src/closed_loop/recurrent_spiking.py` 发现的本地 `dynn` 仓库检出；否则闭环脚本无法启动。
+- `src/experiments/etlp_continuous_toy.py` 与 `src/experiments/cognitive_map_etlp_toy.py` 是本仓 toy 实验入口，运行时通过 `src/models/toy_learning.py` 调用 `dynn`。
+- `src/experiments/point_robot_closed_loop.py` 及其对照脚本是当前的 `dynn`-backed 闭环路线。运行这些脚本前，需要本机存在同级 `dynn` 仓库检出。
 
 ## 当前代码边界
 
-- `src/toy_learning/`：验证学习规则本身，尽量保持小任务、局部更新清楚、无额外运行时依赖。
-- `src/closed_loop/`：验证 `observe -> act -> predict -> learn` 闭环。实验侧保留本仓直接入口，循环脉冲网络执行由 `dynn` 提供。
+- `src/envs/`：最小环境定义。
+- `src/models/`：学习器、读出头和 `dynn` 适配层。
+- `src/experiments/`：实验入口脚本，负责组装配置并打印结果。
 
 顶层文档只保留方向与边界；详细命令、输出字段和指标含义见 [src/README.md](src/README.md)。
 
 ## 快速运行
 
 ```bash
-python src/toy_learning/etlp_continuous_toy.py
-python src/toy_learning/cognitive_map_etlp_toy.py
-python src/closed_loop/point_robot_closed_loop.py
-python src/closed_loop/compare_lif_vs_izh.py
-python src/closed_loop/compare_partial_observable_lif_vs_izh.py
-python src/closed_loop/compare_depth_ablation.py
+PYTHONPATH=src python src/experiments/etlp_continuous_toy.py
+PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
+PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
+PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
+PYTHONPATH=src python src/experiments/compare_depth_ablation.py
 ```

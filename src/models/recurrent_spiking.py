@@ -1,38 +1,19 @@
-"""闭环控制实验使用的 `dynn` 薄适配层。
-
-本模块保留 `snn_online` 侧熟悉的接口：
-
-- `RSNNConfig`
-- `build_spiking_network(...)`
-- `resolve_grid_shape(...)`
-- `clamp(...)`
-- `dot(...)`
-
-但底层神经元执行、稀疏边传播和边权可塑性都交给 `dynn.Net`。
-这样闭环实验仍保持“实验入口直接、学习规则清楚”，同时不再维护一套
-与引擎重复的手写运行时。
-"""
+"""Thin `dynn` wrapper for recurrent spiking networks."""
 
 from __future__ import annotations
 
 import math
 import random
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-
-_DYNN_REPO = Path(__file__).resolve().parents[3] / "dynn"
-if str(_DYNN_REPO) not in sys.path:
-    sys.path.insert(0, str(_DYNN_REPO))
-
-import dynn
+from models.common import clamp
+from models.dynn_support import dynn
 
 
 @dataclass
 class RSNNConfig:
-    """循环脉冲网络配置。"""
+    """Recurrent spiking network configuration."""
 
     input_dim: int
     n_neurons: int = 48
@@ -75,7 +56,7 @@ class RSNNConfig:
 
 
 class _ThreeFactorRule:
-    """复现当前实验使用的局部三因子更新。"""
+    """Local recurrent plasticity used by the point-robot experiment."""
 
     def __init__(
         self,
@@ -150,7 +131,10 @@ class _ThreeFactorRule:
             )
             for weight, delta in zip(edge_block.weights, deltas, strict=True)
         )
-        abs_deltas = tuple(abs(after - before) for before, after in zip(edge_block.weights, next_weights, strict=True))
+        abs_deltas = tuple(
+            abs(after - before)
+            for before, after in zip(edge_block.weights, next_weights, strict=True)
+        )
         result = {
             "traces": {"pre": next_pre},
             "weight_update_count": len(deltas),
@@ -163,7 +147,7 @@ class _ThreeFactorRule:
 
 
 class DynnRecurrentSpikingNetwork:
-    """面向当前闭环实验的多层脉冲网络封装。"""
+    """Multi-layer recurrent spiking feature extractor backed by `dynn`."""
 
     def __init__(self, config: RSNNConfig, rng: random.Random | None = None) -> None:
         self.config = config
@@ -174,11 +158,10 @@ class DynnRecurrentSpikingNetwork:
             config.grid_height,
         )
         self.layer_ids = [f"hidden_{index}" for index in range(config.n_layers)]
-        self.feature_ids = [f"{layer_id}_features" for layer_id in self.layer_ids]
         topology = _build_topology(config, self.rng, self.grid_width, self.grid_height)
-        self._layer_parameters = _layer_parameters_from_topology(topology, self.layer_ids)
-        self._layer_thresholds = _layer_thresholds_from_parameters(config, self._layer_parameters)
-        self._layer_reset_values = _layer_reset_values_from_parameters(config, self._layer_parameters)
+        layer_parameters = _layer_parameters_from_topology(topology, self.layer_ids)
+        self._layer_thresholds = _layer_thresholds_from_parameters(config, layer_parameters)
+        self._layer_reset_values = _layer_reset_values_from_parameters(config, layer_parameters)
         self.graph = dynn.build(
             {"id": f"{config.neuron_model}-closed-loop-rsnn"},
             topology,
@@ -203,7 +186,6 @@ class DynnRecurrentSpikingNetwork:
         self._features = [0.0 for _ in range(self.feature_dim())]
 
     def step(self, inputs: list[float]) -> list[float]:
-        """逐层推进整个图，并返回拼接后的隐藏特征。"""
         output = self.net.step({"obs": list(inputs)}, modulation=0.0)
         self._features = self._read_features(output)
         return list(self._features)
@@ -217,16 +199,16 @@ class DynnRecurrentSpikingNetwork:
     def feature_dim(self) -> int:
         return self.config.n_neurons * self.config.n_layers
 
-    def layer_shape(self) -> tuple[int, int]:
-        return self.grid_width, self.grid_height
-
     def _read_features(self, output) -> list[float]:
-        """按实验原始语义构造 trace + 膜电位特征。"""
         dynamics_state = getattr(self.net, "_dynamics_state", {})
         features: list[float] = []
         for layer_id in self.layer_ids:
             state = dynamics_state.get(layer_id, {}) if isinstance(dynamics_state, dict) else {}
-            spikes = _float_series(output.node(layer_id) or state.get("activity", ()), self.config.n_neurons, 0.0)
+            spikes = _float_series(
+                output.node(layer_id) or state.get("activity", ()),
+                self.config.n_neurons,
+                0.0,
+            )
             voltage = _float_series(state.get("voltage", ()), self.config.n_neurons, 0.0)
             prev_trace = self._spike_traces[layer_id]
             next_trace = [
@@ -260,7 +242,6 @@ def build_spiking_network(
     config: RSNNConfig,
     rng: random.Random | None = None,
 ) -> DynnRecurrentSpikingNetwork:
-    """根据配置构建基于 `dynn` 的循环脉冲网络。"""
     return DynnRecurrentSpikingNetwork(config, rng)
 
 
@@ -279,26 +260,22 @@ def _build_topology(
         }
     ]
     edge_sets: list[dict[str, Any]] = []
-    ports: list[dict[str, Any]] = [
-        {"id": "obs", "node_set": "obs", "kind": "input"},
-    ]
+    ports: list[dict[str, Any]] = [{"id": "obs", "node_set": "obs", "kind": "input"}]
 
     input_dim = config.input_dim
     input_grid_width = 0
     input_grid_height = 0
     for layer_index in range(config.n_layers):
         hidden_id = f"hidden_{layer_index}"
-        feature_id = f"{hidden_id}_features"
-        params = _node_parameters(config, rng, layer_index)
         node_sets.append(
             {
                 "id": hidden_id,
                 "size": config.n_neurons,
                 "node_type": _node_type(config),
-                "parameters": params,
+                "parameters": _node_parameters(config, rng),
             }
         )
-        ports.append({"id": feature_id, "node_set": hidden_id, "kind": "output"})
+        ports.append({"id": hidden_id, "node_set": hidden_id, "kind": "output"})
 
         source_id = "obs" if layer_index == 0 else f"hidden_{layer_index - 1}"
         input_indices = build_input_indices(
@@ -340,11 +317,6 @@ def _build_topology(
         "node_sets": node_sets,
         "edge_sets": edge_sets,
         "ports": ports,
-        "annotations": {
-            "grid_width": grid_width,
-            "grid_height": grid_height,
-            "n_layers": config.n_layers,
-        },
     }
 
 
@@ -383,8 +355,7 @@ def _node_type(config: RSNNConfig) -> str:
     raise ValueError(f"unsupported neuron model: {config.neuron_model}")
 
 
-def _node_parameters(config: RSNNConfig, rng: random.Random, layer_index: int) -> dict[str, Any]:
-    del layer_index
+def _node_parameters(config: RSNNConfig, rng: random.Random) -> dict[str, Any]:
     if config.neuron_model == "lif":
         tau_m_mean = 1.0 / max(1e-6, 1.0 - config.membrane_decay)
         tau_m = []
@@ -413,62 +384,58 @@ def _node_parameters(config: RSNNConfig, rng: random.Random, layer_index: int) -
             "bias": bias,
         }
 
-    if config.neuron_model == "izh":
-        a_values = []
-        b_values = []
-        c_values = []
-        d_values = []
-        v_peak_values = []
-        input_gain_values = []
-        bias = []
-        for _ in range(config.n_neurons):
-            if config.randomize_intrinsics:
-                a_values.append(clamp(rng.gauss(config.izh_a, config.izh_a_jitter), 0.005, 0.08))
-                b_values.append(clamp(rng.gauss(config.izh_b, config.izh_b_jitter), 0.08, 0.35))
-                c_values.append(clamp(rng.gauss(config.izh_c, config.izh_c_jitter), -78.0, -50.0))
-                d_values.append(clamp(rng.gauss(config.izh_d, config.izh_d_jitter), 2.0, 16.0))
-                v_peak_values.append(
-                    clamp(
-                        rng.gauss(config.izh_spike_threshold, config.izh_spike_threshold_jitter),
-                        18.0,
-                        45.0,
-                    )
+    a_values = []
+    b_values = []
+    c_values = []
+    d_values = []
+    v_peak_values = []
+    input_gain_values = []
+    bias = []
+    for _ in range(config.n_neurons):
+        if config.randomize_intrinsics:
+            a_values.append(clamp(rng.gauss(config.izh_a, config.izh_a_jitter), 0.005, 0.08))
+            b_values.append(clamp(rng.gauss(config.izh_b, config.izh_b_jitter), 0.08, 0.35))
+            c_values.append(clamp(rng.gauss(config.izh_c, config.izh_c_jitter), -78.0, -50.0))
+            d_values.append(clamp(rng.gauss(config.izh_d, config.izh_d_jitter), 2.0, 16.0))
+            v_peak_values.append(
+                clamp(
+                    rng.gauss(config.izh_spike_threshold, config.izh_spike_threshold_jitter),
+                    18.0,
+                    45.0,
                 )
-                input_gain_values.append(
-                    clamp(
-                        rng.gauss(config.izh_input_gain, config.izh_input_gain_jitter),
-                        4.0,
-                        14.0,
-                    )
+            )
+            input_gain_values.append(
+                clamp(
+                    rng.gauss(config.izh_input_gain, config.izh_input_gain_jitter),
+                    4.0,
+                    14.0,
                 )
-            else:
-                a_values.append(config.izh_a)
-                b_values.append(config.izh_b)
-                c_values.append(config.izh_c)
-                d_values.append(config.izh_d)
-                v_peak_values.append(config.izh_spike_threshold)
-                input_gain_values.append(config.izh_input_gain)
-            bias.append(rng.gauss(0.0, config.bias_scale))
-        return {
-            "a": a_values,
-            "b": b_values,
-            "c": c_values,
-            "d": d_values,
-            "v_peak": v_peak_values,
-            "input_gain": input_gain_values,
-            "dt": config.izh_dt,
-            "substeps": config.izh_substeps,
-            "bias": bias,
-        }
-
-    raise ValueError(f"unsupported neuron model: {config.neuron_model}")
+            )
+        else:
+            a_values.append(config.izh_a)
+            b_values.append(config.izh_b)
+            c_values.append(config.izh_c)
+            d_values.append(config.izh_d)
+            v_peak_values.append(config.izh_spike_threshold)
+            input_gain_values.append(config.izh_input_gain)
+        bias.append(rng.gauss(0.0, config.bias_scale))
+    return {
+        "a": a_values,
+        "b": b_values,
+        "c": c_values,
+        "d": d_values,
+        "v_peak": v_peak_values,
+        "input_gain": input_gain_values,
+        "dt": config.izh_dt,
+        "substeps": config.izh_substeps,
+        "bias": bias,
+    }
 
 
 def _layer_parameters_from_topology(
     topology: dict[str, Any],
     layer_ids: list[str],
 ) -> dict[str, dict[str, Any]]:
-    """从已生成拓扑中取回每层真实采样到的神经元参数。"""
     wanted = set(layer_ids)
     parameters: dict[str, dict[str, Any]] = {}
     for node_set in topology.get("node_sets", []):
@@ -532,7 +499,6 @@ def _plastic_width(config: RSNNConfig) -> float:
 
 
 def resolve_grid_shape(n_neurons: int, grid_width: int, grid_height: int) -> tuple[int, int]:
-    """解析单层二维网格形状。"""
     if grid_width > 0 and grid_height > 0:
         if grid_width * grid_height != n_neurons:
             raise ValueError(
@@ -541,8 +507,7 @@ def resolve_grid_shape(n_neurons: int, grid_width: int, grid_height: int) -> tup
         return grid_width, grid_height
     for candidate_height in range(int(math.sqrt(n_neurons)), 0, -1):
         if n_neurons % candidate_height == 0:
-            candidate_width = n_neurons // candidate_height
-            return candidate_width, candidate_height
+            return n_neurons // candidate_height, candidate_height
     return n_neurons, 1
 
 
@@ -556,8 +521,11 @@ def build_input_indices(
     input_grid_height: int,
     rng: random.Random,
 ) -> list[list[int]]:
-    """构建输入到当前层的稀疏连接索引。"""
-    if input_grid_width <= 0 or input_grid_height <= 0 or input_grid_width * input_grid_height != input_dim:
+    if (
+        input_grid_width <= 0
+        or input_grid_height <= 0
+        or input_grid_width * input_grid_height != input_dim
+    ):
         return [list(range(input_dim)) for _ in range(config.n_neurons)]
 
     rows: list[list[int]] = []
@@ -583,7 +551,6 @@ def build_recurrent_indices(
     grid_height: int,
     rng: random.Random,
 ) -> list[list[int]]:
-    """构建层内局部递归连接索引。"""
     rows: list[list[int]] = []
     for neuron in range(config.n_neurons):
         x, y = neuron_to_xy(neuron, grid_width)
@@ -651,11 +618,3 @@ def triangular_pseudo_derivative(value: float, threshold: float, width: float = 
     distance = abs(value - threshold)
     width = max(width, 1e-6)
     return max(0.05, 1.0 - distance / width)
-
-
-def dot(left: list[float], right: list[float]) -> float:
-    return sum(a * b for a, b in zip(left, right, strict=True))
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))

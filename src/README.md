@@ -1,25 +1,27 @@
 # Minimal Experiments
 
-`src/` 现在按两类研究目标拆分：
+`src/` 现在按三类职责拆分：
 
-- `toy_learning/`：偏学习规则验证，任务小、结构短、便于快速证伪。
-- `closed_loop/`：偏完整交互闭环，包含 `observe -> act -> predict -> learn` 的持续控制回路。
+- `envs/`：最小环境。
+- `models/`：可复用学习器与 `dynn` 适配层。
+- `experiments/`：实验入口脚本，只负责组装配置、运行和打印摘要。
 
 ## Directory Layout
 
 | Directory / Script | Purpose | Core Signal | Run |
 |---|---|---|---|
-| `toy_learning/etlp_continuous_toy.py` | 连续输入 ETLP-like 分类 | teaching signal | `python src/toy_learning/etlp_continuous_toy.py` |
-| `toy_learning/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `python src/toy_learning/cognitive_map_etlp_toy.py` |
-| `closed_loop/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `python src/closed_loop/point_robot_closed_loop.py` |
-| `closed_loop/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `python src/closed_loop/compare_lif_vs_izh.py` |
-| `closed_loop/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `python src/closed_loop/compare_partial_observable_lif_vs_izh.py` |
-| `closed_loop/compare_depth_ablation.py` | 固定预算下比较浅层、深层与等总宽结构 | reward / success / wall time | `python src/closed_loop/compare_depth_ablation.py` |
+| `experiments/etlp_continuous_toy.py` | 连续输入 ETLP-like 分类 | teaching signal | `PYTHONPATH=src python src/experiments/etlp_continuous_toy.py` |
+| `experiments/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py` |
+| `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
+| `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
+| `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
+| `experiments/compare_depth_ablation.py` | 固定预算下比较浅层、深层与等总宽结构 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_depth_ablation.py` |
 
 ## Dependency Boundary
 
-- `toy_learning/`：纯 Python、自包含、默认不依赖本仓之外的运行时。
-- `closed_loop/`：实验脚本在本仓，但循环脉冲网络通过 [recurrent_spiking.py](/data/projects/snn_online/src/closed_loop/recurrent_spiking.py) 接到本地 `dynn` 仓库。若本机没有可被该脚本发现的 `dynn` 检出，`closed_loop` 相关命令无法运行。
+- `envs/`：纯 Python 最小环境。
+- `models/`：学习器和网络执行都尽量统一到 `dynn`。
+- `experiments/`：入口脚本在本仓，但运行前需要让 Python 能找到 `src/`，例如使用 `PYTHONPATH=src`。
 
 ## Shared Pattern
 
@@ -50,7 +52,7 @@ $$
 快速检查：
 
 ```bash
-python src/toy_learning/etlp_continuous_toy.py --train-steps 600 --eval-every 100 --eval-samples 200
+PYTHONPATH=src python src/experiments/etlp_continuous_toy.py --train-steps 600 --eval-every 100 --eval-samples 200
 ```
 
 可打印指标：
@@ -73,7 +75,7 @@ $$
 快速检查：
 
 ```bash
-python src/toy_learning/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250
+PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250
 ```
 
 关键指标：
@@ -89,22 +91,22 @@ python src/toy_learning/cognitive_map_etlp_toy.py --train-steps 1000 --eval-ever
 
 组件：
 
-- `closed_loop/recurrent_spiking.py`：面向当前实验的 `dynn` 薄适配层；保留 LIF 与 Izhikevich 两种循环脉冲网络接口。实验侧仍通过 `RSNNConfig` 和 `build_spiking_network(...)` 直接构网。
-- `closed_loop/point_robot_env.py`：连续状态、离散动作的 2D point robot，支持 `full` 与 `partial_goal_cue` 两种观测模式。
-- `closed_loop/point_robot_closed_loop.py`：world model + TD action value 控制闭环。
+- `models/recurrent_spiking.py`：面向当前实验的 `dynn` 薄适配层；保留 LIF 与 Izhikevich 两种循环脉冲网络接口。
+- `envs/point_robot.py`：连续状态、离散动作的 2D point robot，支持 `full` 与 `partial_goal_cue` 两种观测模式。
+- `models/point_robot_closed_loop.py`：world model + TD action value 控制闭环。
 
 用途：验证 R-SNN recurrent state 能否进入真正的 `observe -> act -> learn` 控制回路。
 
 快速检查：
 
 ```bash
-python src/closed_loop/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40
 ```
 
 若希望显式指定二维网格形状，可以额外传：
 
 ```bash
-python src/closed_loop/point_robot_closed_loop.py --n-layers 3 --n-neurons 64 --grid-width 8 --grid-height 8
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --n-layers 3 --n-neurons 64 --grid-width 8 --grid-height 8
 ```
 
 关键指标：
@@ -118,7 +120,7 @@ python src/closed_loop/point_robot_closed_loop.py --n-layers 3 --n-neurons 64 --
 部分可观测版本：
 
 ```bash
-python src/closed_loop/point_robot_closed_loop.py --observation-mode partial_goal_cue --goal-cue-steps 6
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --observation-mode partial_goal_cue --goal-cue-steps 6
 ```
 
 这里的设计是：episode 前几步给出目标相对方向提示，之后隐藏方向，只保留自身位置、速度、进度和目标距离。这样就把任务从“瞬时反应控制”推向“需要在 recurrent state 里保留短期目标记忆”的设置。
@@ -130,7 +132,7 @@ python src/closed_loop/point_robot_closed_loop.py --observation-mode partial_goa
 运行：
 
 ```bash
-python src/closed_loop/compare_lif_vs_izh.py
+PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 ```
 
 输出指标：
@@ -153,7 +155,7 @@ python src/closed_loop/compare_lif_vs_izh.py
 运行：
 
 ```bash
-python src/closed_loop/compare_partial_observable_lif_vs_izh.py
+PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 ```
 
 说明：
@@ -163,7 +165,7 @@ python src/closed_loop/compare_partial_observable_lif_vs_izh.py
 
 严格深度消融：
 
-- 命令：`python src/closed_loop/compare_depth_ablation.py --episodes 40 --eval-every 20 --eval-episodes 10 --seeds 2 --base-width 64 --deep-layers 3`
+- 命令：`PYTHONPATH=src python src/experiments/compare_depth_ablation.py --episodes 40 --eval-every 20 --eval-episodes 10 --seeds 2 --base-width 64 --deep-layers 3`
 - 该实验固定训练预算和随机种子，只比较结构：
   - `1x64`：单层、64 神经元
   - `3x64`：三层、每层 64 神经元

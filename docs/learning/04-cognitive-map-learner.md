@@ -455,7 +455,7 @@ next-state prediction error
 
 ## 19. 本项目代码对应
 
-- Code: [../../src/toy_learning/cognitive_map_etlp_toy.py](../../src/toy_learning/cognitive_map_etlp_toy.py)
+- Code: [../../src/experiments/cognitive_map_etlp_toy.py](../../src/experiments/cognitive_map_etlp_toy.py)
 - Notes: [../../src/README.md](../../src/README.md)
 
 该原型把 Cognitive Map 的 `state + action -> next_state` 学习目标，接到 ETLP-like prediction-error 局部更新上：
