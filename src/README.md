@@ -35,6 +35,30 @@ low-dimensional modulation signal
 online weight update
 ```
 
+## Functional Brain Layout
+
+当前 `src/` 仍保持最小实验结构，但后续闭环任务可以按功能性脑区拆分模型职责：
+
+| Brain Region | Engineering Role | Current / Near-term Mapping |
+|---|---|---|
+| 端脑 / 皮层 | 多层二维稀疏网络，负责特征、状态、记忆、预测和关联推理 | `models/recurrent_spiking.py` 与后续 cortical model |
+| 丘脑 | 路由外部特征和皮层区信息，计算价值调制并控制可塑性强度 | 后续 thalamic modulation adapter |
+| 小脑 | 记忆并回放动作细节，把动作意图展开为执行参数 | 后续 motor program model |
+| 中脑 / 后脑 | 维护饥饿、疼痛、疲劳、能量等内稳态变量 | 后续 physiology environment state |
+
+这个划分不是为了在代码里引入复杂框架，而是为了让实验问题更清楚：
+
+```text
+env observation / physiology
+  -> thalamic routing + modulation
+  -> cortical recurrent state + local learning
+  -> action intent
+  -> cerebellar motor program
+  -> env action
+```
+
+在当前阶段，最直接的落地任务是“部分可观测点机器人 + 内稳态变量”。它比静态模式识别更适合检验深度、多层二维拓扑、Izhikevich 动力学和局部调制是否真正有用。
+
 ## Experiments
 
 ## Toy Learning
