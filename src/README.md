@@ -102,6 +102,12 @@ $$
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250
 ```
 
+导出到 `NeuralSoup` 标准 run 目录：
+
+```bash
+PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250 --export-run-dir ../neuralsoup/public/runs
+```
+
 关键指标：
 
 - `prediction_mse`：最近一个训练窗口内的一步预测均方误差。

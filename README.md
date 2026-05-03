@@ -139,7 +139,11 @@ physiology + task feedback + prediction error
 PYTHONPATH=src python src/experiments/etlp_continuous_toy.py
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
+PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --export-run-dir ../neuralsoup/public/runs
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --export-run-dir ../neuralsoup/public/runs
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 PYTHONPATH=src python src/experiments/compare_depth_ablation.py
 ```
+
+导出后可在 `NeuralSoup` 中通过 `?runs=/runs&runId=run-grid-world-seed-<seed>` 或 `?runs=/runs&runId=run-point-robot-seed-<seed>` 打开。

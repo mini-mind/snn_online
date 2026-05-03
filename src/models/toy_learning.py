@@ -6,6 +6,7 @@ import math
 import random
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 from envs.grid_world import ACTIONS as GRID_ACTIONS
 from envs.grid_world import GridWorld, GridWorldConfig
@@ -463,6 +464,23 @@ def train_step_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearn
     return learner.learn(state_code, action, next_code)
 
 
+def train_step_cognitive_map_with_trace(
+    world: GridWorld,
+    learner: DynnLocalTransitionLearner,
+    rng: random.Random,
+    step: int,
+) -> tuple[float, tuple[int, int], str, tuple[int, int]]:
+    if step % 37 == 0:
+        world.reset()
+    state = world.state
+    action = rng.choice(GRID_ACTIONS)
+    state_code = world.encode(state)
+    next_state = world.step(action)
+    next_code = world.encode(next_state)
+    error = learner.learn(state_code, action, next_code)
+    return error, state, action, next_state
+
+
 def evaluate_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearner, rng: random.Random, config: CognitiveMapConfig) -> tuple[float, float, float]:
     transition_correct = 0
     transition_total = 0
@@ -510,6 +528,7 @@ def evaluate_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearner
 
 
 def train_cognitive_map(config: CognitiveMapConfig) -> None:
+    validate_cognitive_map_config(config)
     rng = random.Random(config.seed)
     world = GridWorld(
         GridWorldConfig(
@@ -549,6 +568,202 @@ def train_cognitive_map(config: CognitiveMapConfig) -> None:
                 f"path_efficiency={path_efficiency:.3f}"
             )
             error_window = 0.0
+
+
+def train_cognitive_map_with_summary(
+    config: CognitiveMapConfig,
+) -> dict[str, float | str | dict[str, Any] | list[dict[str, Any]]]:
+    validate_cognitive_map_config(config)
+    rng = random.Random(config.seed)
+    world = GridWorld(
+        GridWorldConfig(
+            grid_size=config.grid_size,
+            feature_dim=config.feature_dim,
+            noise=config.noise,
+            seed=config.seed,
+        ),
+        rng,
+    )
+    learner = DynnLocalTransitionLearner(config, rng, world.config.feature_dim)
+
+    run_id = f"run-grid-world-seed-{config.seed}"
+    events: list[dict[str, Any]] = [
+        {
+            "schema_version": 1,
+            "run_id": run_id,
+            "seq": 1,
+            "time_sec": 0.0,
+            "type": "run_started",
+            "message": "grid world cognitive map started",
+        }
+    ]
+    episode_artifacts: list[dict[str, Any]] = []
+    trajectory_artifacts: dict[str, list[dict[str, float | int | str]]] = {}
+    error_window = 0.0
+    last_prediction_mse = 0.0
+    last_transition_accuracy = 0.0
+    last_planning_success = 0.0
+    last_path_efficiency = 0.0
+    seq = 2
+    episode = 1
+    trajectory: list[dict[str, float | int | str]] = []
+    steps_in_episode = 0
+
+    for step in range(1, config.train_steps + 1):
+        error, state, action, next_state = train_step_cognitive_map_with_trace(world, learner, rng, step)
+        error_window += error
+        steps_in_episode += 1
+        trajectory.append(
+            {
+                "t": float(step),
+                "x": int(next_state[0]),
+                "y": int(next_state[1]),
+                "state_x": int(state[0]),
+                "state_y": int(state[1]),
+                "action": action,
+                "reward": 1.0 if next_state != state else 0.0,
+            }
+        )
+
+        if step % config.eval_every == 0:
+            transition_accuracy, planning_success, path_efficiency = evaluate_cognitive_map(world, learner, rng, config)
+            prediction_mse = error_window / config.eval_every
+            last_prediction_mse = prediction_mse
+            last_transition_accuracy = transition_accuracy
+            last_planning_success = planning_success
+            last_path_efficiency = path_efficiency
+            summary_artifact_id = f"episode-{episode:06d}-summary"
+            trajectory_artifact_id = f"trajectory-episode-{episode:06d}"
+            episode_artifacts.append(
+                {
+                    "episode": episode,
+                    "summary_artifact_id": summary_artifact_id,
+                    "trajectory_artifact_id": trajectory_artifact_id,
+                    "reward": planning_success,
+                    "success": planning_success >= 0.5,
+                    "steps": steps_in_episode,
+                    "prediction_mse": prediction_mse,
+                    "transition_acc": transition_accuracy,
+                    "path_efficiency": path_efficiency,
+                }
+            )
+            trajectory_artifacts[trajectory_artifact_id] = list(trajectory)
+            events.append(
+                {
+                    "schema_version": 1,
+                    "run_id": run_id,
+                    "seq": seq,
+                    "time_sec": float(step),
+                    "episode": episode,
+                    "step": steps_in_episode,
+                    "type": "episode_finished",
+                    "metrics": {
+                        "prediction_mse": prediction_mse,
+                        "success_rate": planning_success,
+                        "transition_acc": transition_accuracy,
+                        "path_efficiency": path_efficiency,
+                    },
+                    "refs": [
+                        {"artifact_id": summary_artifact_id, "kind": "episode_summary"},
+                        {"artifact_id": trajectory_artifact_id, "kind": "trajectory"},
+                    ],
+                    "message": "grid world evaluation window finished",
+                }
+            )
+            seq += 1
+            episode += 1
+            trajectory = []
+            steps_in_episode = 0
+            error_window = 0.0
+
+    if steps_in_episode > 0:
+        transition_accuracy, planning_success, path_efficiency = evaluate_cognitive_map(world, learner, rng, config)
+        prediction_mse = error_window / steps_in_episode
+        last_prediction_mse = prediction_mse
+        last_transition_accuracy = transition_accuracy
+        last_planning_success = planning_success
+        last_path_efficiency = path_efficiency
+        summary_artifact_id = f"episode-{episode:06d}-summary"
+        trajectory_artifact_id = f"trajectory-episode-{episode:06d}"
+        episode_artifacts.append(
+            {
+                "episode": episode,
+                "summary_artifact_id": summary_artifact_id,
+                "trajectory_artifact_id": trajectory_artifact_id,
+                "reward": planning_success,
+                "success": planning_success >= 0.5,
+                "steps": steps_in_episode,
+                "prediction_mse": prediction_mse,
+                "transition_acc": transition_accuracy,
+                "path_efficiency": path_efficiency,
+            }
+        )
+        trajectory_artifacts[trajectory_artifact_id] = list(trajectory)
+        events.append(
+            {
+                "schema_version": 1,
+                "run_id": run_id,
+                "seq": seq,
+                "time_sec": float(config.train_steps),
+                "episode": episode,
+                "step": steps_in_episode,
+                "type": "episode_finished",
+                "metrics": {
+                    "prediction_mse": prediction_mse,
+                    "success_rate": planning_success,
+                    "transition_acc": transition_accuracy,
+                    "path_efficiency": path_efficiency,
+                },
+                "refs": [
+                    {"artifact_id": summary_artifact_id, "kind": "episode_summary"},
+                    {"artifact_id": trajectory_artifact_id, "kind": "trajectory"},
+                ],
+                "message": "grid world evaluation window finished",
+            }
+        )
+        seq += 1
+
+    events.append(
+        {
+            "schema_version": 1,
+            "run_id": run_id,
+            "seq": seq,
+            "time_sec": float(config.train_steps),
+            "type": "run_finished",
+            "metrics": {
+                "prediction_mse": last_prediction_mse,
+                "success_rate": last_planning_success,
+                "transition_acc": last_transition_accuracy,
+                "path_efficiency": last_path_efficiency,
+            },
+            "message": "grid world cognitive map finished",
+        }
+    )
+
+    return {
+        "run_id": run_id,
+        "prediction_mse": last_prediction_mse,
+        "transition_acc": last_transition_accuracy,
+        "planning_success": last_planning_success,
+        "path_efficiency": last_path_efficiency,
+        "episode_artifacts": episode_artifacts,
+        "trajectory_artifacts": trajectory_artifacts,
+        "events": events,
+        "topology": learner.graph.topology,
+    }
+
+
+def validate_cognitive_map_config(config: CognitiveMapConfig) -> None:
+    if config.grid_size <= 1:
+        raise ValueError(f"grid_size must be greater than 1, got {config.grid_size}")
+    if config.feature_dim <= 0:
+        raise ValueError(f"feature_dim must be positive, got {config.feature_dim}")
+    if config.train_steps <= 0:
+        raise ValueError(f"train_steps must be positive, got {config.train_steps}")
+    if config.eval_every <= 0:
+        raise ValueError(f"eval_every must be positive, got {config.eval_every}")
+    if config.planning_horizon <= 0:
+        raise ValueError(f"planning_horizon must be positive, got {config.planning_horizon}")
 
 
 def triangular_pseudo_derivative(value: float, threshold: float, width: float) -> float:
