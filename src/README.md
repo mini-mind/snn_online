@@ -14,6 +14,7 @@
 | `experiments/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py` |
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
+| `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
 
@@ -133,6 +134,12 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like
 ```
 
+短期 delay feature 入口：
+
+```bash
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like --delay-features
+```
+
 第一阶段 benchmark / 对照入口：
 
 ```bash
@@ -181,6 +188,35 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
   - `success_gain_tess_like_minus_three_factor`
   - `speed_ratio_tess_like_vs_three_factor`
 
+当前小基准结论：
+
+- `partial_goal_cue`，5 seeds，80 episodes：`tess_like` 相对 `three_factor` 的 reward gain 约 `+0.359`，success gain 约 `+0.030`，wall time 约慢 `3%`。
+- `full`，5 seeds，80 episodes：`tess_like` 相对 `three_factor` 的 reward gain 约 `-0.671`，success gain 约 `-0.190`，wall time 约慢 `6.5%`。
+- 这说明 `tess_like` 更像是短期记忆任务的候选机制，而不是全观测控制下的直接替代。
+
+### Delay Feature Benchmark
+
+用途：在不增加外部依赖和复杂参数面的前提下，检验多时间尺度 spike delay trace 是否改善 `partial_goal_cue` 的短期目标记忆。
+
+运行：
+
+```bash
+PYTHONPATH=src python src/experiments/compare_delay_features.py
+```
+
+说明：
+
+- 默认使用 `tess_like` + `partial_goal_cue`，比较 `plain` 与 `delay` 两个条件。
+- `delay` 条件会把 RSNN feature 扩展为 `base spike feature + delay feature`。delay feature 是每个神经元的多时间尺度 spike trace 混合，混合权重由同一个低维 modulation signal 局部更新。
+- 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫面。
+- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary。
+
+当前小基准结论：
+
+- `partial_goal_cue`，5 seeds，80 episodes，`tess_like`：delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`。
+- 速度代价明显：delay feature 的 wall time 约为 plain 的 `1.61x`。
+- 这足以支持下一步继续做更轻量的 delay 表示或 replay，但还不能证明该机制在全观测控制任务中也有价值。
+
 ### LIF vs IZ 对比
 
 用途：检验 Izhikevich 动力学替代 LIF 后，最终控制效果是否改善，以及 wall-clock 速度是否下降。
@@ -224,8 +260,8 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 1. `tess_like` 多时间尺度 trace：
    当前已接入 `models/recurrent_spiking.py`，作为 `three_factor` baseline 的第一阶段对照。
 
-2. learnable delay：
-   下一步在 `partial_goal_cue` 任务上加入权重外的时延可塑性。
+2. delay features：
+   当前已接入 `--delay-features`，优先在 `partial_goal_cue` 上验证是否改善短期目标记忆。
 
 3. dreaming / replay：
    在局部规则稳定后，再把 imagined experience 加回闭环系统。

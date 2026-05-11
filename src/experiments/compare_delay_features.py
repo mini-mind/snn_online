@@ -1,4 +1,4 @@
-"""CLI entry for three_factor vs tess_like comparison on point-robot control."""
+"""CLI entry for plain RSNN vs delay-feature RSNN on point-robot control."""
 
 from __future__ import annotations
 
@@ -23,40 +23,20 @@ def prepare_jsonl(path: Path) -> None:
     path.write_text("", encoding="utf-8")
 
 
-def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds: list[int]) -> dict[str, object]:
-    return {
-        "episodes": base_config.episodes,
-        "eval_every": base_config.eval_every,
-        "eval_episodes": base_config.eval_episodes,
-        "n_neurons": base_config.n_neurons,
-        "recurrent_degree": base_config.recurrent_degree,
-        "neuron_model": base_config.neuron_model,
-        "observation_mode": env_config.observation_mode,
-        "goal_cue_steps": env_config.goal_cue_steps,
-        "max_steps": env_config.max_steps,
-        "tess_fast_decay": base_config.tess_fast_decay,
-        "tess_slow_decay": base_config.tess_slow_decay,
-        "tess_post_decay": base_config.tess_post_decay,
-        "tess_eligibility_decay": base_config.tess_eligibility_decay,
-        "delay_features": base_config.delay_features,
-        "seeds": seeds,
-    }
-
-
 def run_comparison(
     base_config: AgentConfig,
     env_config: PointRobotConfig,
     seeds: list[int],
     output_jsonl: Path | None = None,
 ) -> dict[str, dict[str, float]]:
-    summaries: dict[str, list[dict[str, float | str]]] = {"three_factor": [], "tess_like": []}
-    for plasticity_rule in ("three_factor", "tess_like"):
-        print(f"rule={plasticity_rule}")
+    summaries: dict[str, list[dict[str, float | str]]] = {"plain": [], "delay": []}
+    for name, enabled in (("plain", False), ("delay", True)):
+        print(f"condition={name}")
         for seed in seeds:
-            agent_config = replace(base_config, plasticity_rule=plasticity_rule, seed=seed)
+            agent_config = replace(base_config, delay_features=enabled, seed=seed)
             run_env_config = replace(env_config, seed=seed + 7)
             summary = train_agent(agent_config, run_env_config, verbose=False)
-            summaries[plasticity_rule].append(summary)
+            summaries[name].append(summary)
             print(
                 f"  seed={seed} "
                 f"eval_reward={summary['final_eval_reward']:.3f} "
@@ -68,7 +48,7 @@ def run_comparison(
                     output_jsonl,
                     {
                         "type": "run",
-                        "plasticity_rule": plasticity_rule,
+                        "condition": name,
                         "seed": seed,
                         "eval_reward": summary["final_eval_reward"],
                         "eval_success": summary["final_eval_success"],
@@ -78,37 +58,34 @@ def run_comparison(
                         "eval_episodes": agent_config.eval_episodes,
                         "n_neurons": agent_config.n_neurons,
                         "recurrent_degree": agent_config.recurrent_degree,
+                        "plasticity_rule": agent_config.plasticity_rule,
                         "neuron_model": agent_config.neuron_model,
                         "observation_mode": run_env_config.observation_mode,
                         "goal_cue_steps": run_env_config.goal_cue_steps,
                         "max_steps": run_env_config.max_steps,
-                        "tess_fast_decay": agent_config.tess_fast_decay,
-                        "tess_slow_decay": agent_config.tess_slow_decay,
-                        "tess_post_decay": agent_config.tess_post_decay,
-                        "tess_eligibility_decay": agent_config.tess_eligibility_decay,
                         "delay_features": agent_config.delay_features,
                     },
                 )
         print()
 
     aggregated = {
-        rule: {
+        name: {
             "mean_eval_reward": mean(row["final_eval_reward"] for row in rows),
             "mean_eval_success": mean(row["final_eval_success"] for row in rows),
             "mean_elapsed_sec": mean(row["elapsed_sec"] for row in rows),
         }
-        for rule, rows in summaries.items()
+        for name, rows in summaries.items()
     }
     aggregated["delta"] = {
-        "reward_gain_tess_like_minus_three_factor": (
-            aggregated["tess_like"]["mean_eval_reward"] - aggregated["three_factor"]["mean_eval_reward"]
+        "reward_gain_delay_minus_plain": (
+            aggregated["delay"]["mean_eval_reward"] - aggregated["plain"]["mean_eval_reward"]
         ),
-        "success_gain_tess_like_minus_three_factor": (
-            aggregated["tess_like"]["mean_eval_success"] - aggregated["three_factor"]["mean_eval_success"]
+        "success_gain_delay_minus_plain": (
+            aggregated["delay"]["mean_eval_success"] - aggregated["plain"]["mean_eval_success"]
         ),
-        "speed_ratio_tess_like_vs_three_factor": safe_ratio(
-            aggregated["tess_like"]["mean_elapsed_sec"],
-            aggregated["three_factor"]["mean_elapsed_sec"],
+        "speed_ratio_delay_vs_plain": safe_ratio(
+            aggregated["delay"]["mean_elapsed_sec"],
+            aggregated["plain"]["mean_elapsed_sec"],
         ),
     }
     if output_jsonl is not None:
@@ -116,8 +93,8 @@ def run_comparison(
             output_jsonl,
             {
                 "type": "summary",
-                "three_factor": aggregated["three_factor"],
-                "tess_like": aggregated["tess_like"],
+                "plain": aggregated["plain"],
+                "delay": aggregated["delay"],
                 "delta": aggregated["delta"],
                 "config": config_to_dict(base_config, env_config, seeds),
             },
@@ -125,20 +102,32 @@ def run_comparison(
     return aggregated
 
 
+def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds: list[int]) -> dict[str, object]:
+    return {
+        "episodes": base_config.episodes,
+        "eval_every": base_config.eval_every,
+        "eval_episodes": base_config.eval_episodes,
+        "n_neurons": base_config.n_neurons,
+        "recurrent_degree": base_config.recurrent_degree,
+        "plasticity_rule": base_config.plasticity_rule,
+        "neuron_model": base_config.neuron_model,
+        "observation_mode": env_config.observation_mode,
+        "goal_cue_steps": env_config.goal_cue_steps,
+        "max_steps": env_config.max_steps,
+        "seeds": seeds,
+    }
+
+
 def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]:
     parser = argparse.ArgumentParser(
-        description="Compare three_factor and tess_like on point robot control."
+        description="Compare plain and delay-feature RSNN on point robot control."
     )
     parser.add_argument("--episodes", type=int, default=80)
     parser.add_argument("--eval-every", type=int, default=20)
     parser.add_argument("--eval-episodes", type=int, default=20)
-    parser.add_argument("--n-neurons", type=int, default=96)
+    parser.add_argument("--n-neurons", type=int, default=64)
     parser.add_argument("--recurrent-degree", type=int, default=4)
-    parser.add_argument("--tess-fast-decay", type=float, default=AgentConfig.tess_fast_decay)
-    parser.add_argument("--tess-slow-decay", type=float, default=AgentConfig.tess_slow_decay)
-    parser.add_argument("--tess-post-decay", type=float, default=AgentConfig.tess_post_decay)
-    parser.add_argument("--tess-eligibility-decay", type=float, default=AgentConfig.tess_eligibility_decay)
-    parser.add_argument("--delay-features", action="store_true")
+    parser.add_argument("--plasticity-rule", choices=["three_factor", "tess_like"], default="tess_like")
     parser.add_argument("--neuron-model", choices=["lif", "izh"], default=AgentConfig.neuron_model)
     parser.add_argument(
         "--observation-mode",
@@ -158,11 +147,7 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]
             eval_episodes=args.eval_episodes,
             n_neurons=args.n_neurons,
             recurrent_degree=args.recurrent_degree,
-            tess_fast_decay=args.tess_fast_decay,
-            tess_slow_decay=args.tess_slow_decay,
-            tess_post_decay=args.tess_post_decay,
-            tess_eligibility_decay=args.tess_eligibility_decay,
-            delay_features=args.delay_features,
+            plasticity_rule=args.plasticity_rule,
             neuron_model=args.neuron_model,
             randomize_intrinsics=True,
             seed=args.seed_start,
@@ -186,12 +171,8 @@ def main() -> None:
         f"max_steps={env_config.max_steps} "
         f"n_neurons={agent_config.n_neurons} "
         f"recurrent_degree={agent_config.recurrent_degree} "
-        f"neuron_model={agent_config.neuron_model} "
-        f"tess_fast_decay={agent_config.tess_fast_decay:.3f} "
-        f"tess_slow_decay={agent_config.tess_slow_decay:.3f} "
-        f"tess_post_decay={agent_config.tess_post_decay:.3f} "
-        f"tess_eligibility_decay={agent_config.tess_eligibility_decay:.3f} "
-        f"delay_features={agent_config.delay_features}"
+        f"plasticity_rule={agent_config.plasticity_rule} "
+        f"neuron_model={agent_config.neuron_model}"
     )
     if output_jsonl is not None:
         prepare_jsonl(output_jsonl)
@@ -199,23 +180,20 @@ def main() -> None:
     results = run_comparison(agent_config, env_config, seeds, output_jsonl=output_jsonl)
     print("summary")
     print(
-        f"  three_factor mean_eval_reward={results['three_factor']['mean_eval_reward']:.3f} "
-        f"mean_eval_success={results['three_factor']['mean_eval_success']:.3f} "
-        f"mean_elapsed_sec={results['three_factor']['mean_elapsed_sec']:.3f}"
+        f"  plain mean_eval_reward={results['plain']['mean_eval_reward']:.3f} "
+        f"mean_eval_success={results['plain']['mean_eval_success']:.3f} "
+        f"mean_elapsed_sec={results['plain']['mean_elapsed_sec']:.3f}"
     )
     print(
-        f"  tess_like mean_eval_reward={results['tess_like']['mean_eval_reward']:.3f} "
-        f"mean_eval_success={results['tess_like']['mean_eval_success']:.3f} "
-        f"mean_elapsed_sec={results['tess_like']['mean_elapsed_sec']:.3f}"
+        f"  delay mean_eval_reward={results['delay']['mean_eval_reward']:.3f} "
+        f"mean_eval_success={results['delay']['mean_eval_success']:.3f} "
+        f"mean_elapsed_sec={results['delay']['mean_elapsed_sec']:.3f}"
     )
     print(
         "  delta "
-        f"reward_gain_tess_like_minus_three_factor="
-        f"{results['delta']['reward_gain_tess_like_minus_three_factor']:.3f} "
-        f"success_gain_tess_like_minus_three_factor="
-        f"{results['delta']['success_gain_tess_like_minus_three_factor']:.3f} "
-        f"speed_ratio_tess_like_vs_three_factor="
-        f"{results['delta']['speed_ratio_tess_like_vs_three_factor']:.3f}"
+        f"reward_gain_delay_minus_plain={results['delta']['reward_gain_delay_minus_plain']:.3f} "
+        f"success_gain_delay_minus_plain={results['delta']['success_gain_delay_minus_plain']:.3f} "
+        f"speed_ratio_delay_vs_plain={results['delta']['speed_ratio_delay_vs_plain']:.3f}"
     )
 
 

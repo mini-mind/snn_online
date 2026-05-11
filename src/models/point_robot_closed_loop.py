@@ -34,6 +34,7 @@ class AgentConfig:
     tess_slow_decay: float = RSNNConfig.tess_slow_decay
     tess_post_decay: float = RSNNConfig.tess_post_decay
     tess_eligibility_decay: float = RSNNConfig.tess_eligibility_decay
+    delay_features: bool = False
     neuron_model: str = "lif"
     randomize_intrinsics: bool = True
     seed: int = 31
@@ -138,6 +139,7 @@ class ClosedLoopPointRobotAgent:
                 tess_slow_decay=config.tess_slow_decay,
                 tess_post_decay=config.tess_post_decay,
                 tess_eligibility_decay=config.tess_eligibility_decay,
+                delay_features=config.delay_features,
                 randomize_intrinsics=config.randomize_intrinsics,
                 seed=config.seed + 1,
             ),
@@ -296,6 +298,7 @@ def train_agent(
             f"tess_slow_decay={config.tess_slow_decay:.3f} "
             f"tess_post_decay={config.tess_post_decay:.3f} "
             f"tess_eligibility_decay={config.tess_eligibility_decay:.3f} "
+            f"delay_features={config.delay_features} "
             f"randomize_intrinsics={config.randomize_intrinsics} "
             f"max_steps={env_config.max_steps} "
             f"observation_mode={env_config.observation_mode} "
@@ -378,6 +381,7 @@ def train_agent(
     elapsed_sec = time.perf_counter() - start_time
     return {
         "neuron_model": config.neuron_model,
+        "delay_features": config.delay_features,
         "seed": float(config.seed),
         "random_reward": random_reward,
         "random_success": random_success,

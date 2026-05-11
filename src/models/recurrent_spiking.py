@@ -47,6 +47,8 @@ class RSNNConfig:
     tess_slow_decay: float = 0.92
     tess_post_decay: float = 0.80
     tess_eligibility_decay: float = 0.88
+    delay_features: bool = False
+    delay_mix_lr: float = 0.0004
     seed: int = 13
 
 
@@ -81,6 +83,8 @@ class LocalRecurrentSpikingNetwork:
         self.thresholds = _thresholds(config, self.rng)
         self.reset_values = _reset_values(config, self.rng)
         self.izh_a, self.izh_b, self.izh_d, self.izh_gain = _izh_params(config, self.rng)
+        self.delay_decays = [0.72, 0.88, 0.97]
+        self.delay_mix_weights = _delay_mix_weights(config, self.delay_decays, self.rng)
         self.reset_state()
 
     def reset_state(self) -> None:
@@ -95,11 +99,12 @@ class LocalRecurrentSpikingNetwork:
         self.fast_pre_trace = [0.0 for _ in range(self.config.n_neurons)]
         self.slow_pre_trace = [0.0 for _ in range(self.config.n_neurons)]
         self.post_trace = [0.0 for _ in range(self.config.n_neurons)]
+        self.delay_traces = _empty_delay_traces(self.config, self.delay_decays)
         self.eligibility = [
             [0.0 for _ in row]
             for row in self.recurrent_sources
         ]
-        self._features = [0.0 for _ in range(self.config.n_neurons)]
+        self._features = [0.0 for _ in range(self.feature_dim())]
 
     def step(self, inputs: list[float]) -> list[float]:
         current = self._current(inputs)
@@ -112,6 +117,7 @@ class LocalRecurrentSpikingNetwork:
             self.config.trace_decay * trace + spike
             for trace, spike in zip(self.spike_trace, self.spikes, strict=True)
         ]
+        self._update_delay_traces()
         self._features = self._read_features()
         return list(self._features)
 
@@ -129,14 +135,15 @@ class LocalRecurrentSpikingNetwork:
         ]
         if self.config.plasticity_rule == "three_factor":
             self._apply_three_factor(clipped, post_factor)
-            return
-        self._apply_tess_like(clipped, post_factor)
+        else:
+            self._apply_tess_like(clipped, post_factor)
+        self._apply_delay_mix_modulation(clipped, post_factor)
 
     def features(self) -> list[float]:
         return list(self._features)
 
     def feature_dim(self) -> int:
-        return self.config.n_neurons
+        return self.config.n_neurons * (2 if self.config.delay_features else 1)
 
     def _current(self, inputs: list[float]) -> list[float]:
         values = []
@@ -192,21 +199,38 @@ class LocalRecurrentSpikingNetwork:
 
     def _read_features(self) -> list[float]:
         if self.config.neuron_model == "lif":
-            return [
+            base_features = [
                 trace + 0.15 * max(0.0, voltage / max(threshold, 1e-6))
                 for trace, voltage, threshold in zip(
                     self.spike_trace, self.voltage, self.thresholds, strict=True
                 )
             ]
+        else:
+            base_features = [
+                trace + 0.15 * max(0.0, (voltage - reset) / max(1.0, threshold - reset))
+                for trace, voltage, threshold, reset in zip(
+                    self.spike_trace,
+                    self.voltage,
+                    self.thresholds,
+                    self.reset_values,
+                    strict=True,
+                )
+            ]
+        if not self.config.delay_features:
+            return base_features
+        return base_features + self._delay_features()
+
+    def _update_delay_traces(self) -> None:
+        if not self.config.delay_features:
+            return
+        for neuron, spike in enumerate(self.spikes):
+            for slot, decay in enumerate(self.delay_decays):
+                self.delay_traces[neuron][slot] = decay * self.delay_traces[neuron][slot] + spike
+
+    def _delay_features(self) -> list[float]:
         return [
-            trace + 0.15 * max(0.0, (voltage - reset) / max(1.0, threshold - reset))
-            for trace, voltage, threshold, reset in zip(
-                self.spike_trace,
-                self.voltage,
-                self.thresholds,
-                self.reset_values,
-                strict=True,
-            )
+            sum(weight * trace for weight, trace in zip(weights, traces, strict=True))
+            for weights, traces in zip(self.delay_mix_weights, self.delay_traces, strict=True)
         ]
 
     def _apply_three_factor(self, modulation: float, post_factor: list[float]) -> None:
@@ -246,6 +270,18 @@ class LocalRecurrentSpikingNetwork:
                 delta = modulation * post_factor[target] * eligibility
                 self._update_recurrent_weight(target, edge_index, delta)
 
+    def _apply_delay_mix_modulation(self, modulation: float, post_factor: list[float]) -> None:
+        if not self.config.delay_features or self.config.delay_mix_lr == 0.0:
+            return
+        for neuron, traces in enumerate(self.delay_traces):
+            for slot, trace in enumerate(traces):
+                delta = modulation * post_factor[neuron] * trace
+                weight = self.delay_mix_weights[neuron][slot]
+                next_weight = (weight + self.config.delay_mix_lr * delta) * (
+                    1.0 - self.config.weight_decay
+                )
+                self.delay_mix_weights[neuron][slot] = clamp(next_weight, -0.8, 0.8)
+
     def _update_recurrent_weight(self, target: int, edge_index: int, delta: float) -> None:
         weight = self.recurrent_weights[target][edge_index]
         next_weight = (weight + self.config.plastic_lr * delta) * (1.0 - self.config.weight_decay)
@@ -261,6 +297,28 @@ def build_spiking_network(
 
 def _dense_weights(rows: int, cols: int, scale: float, rng: random.Random) -> list[list[float]]:
     return [[rng.gauss(0.0, scale) for _ in range(cols)] for _ in range(rows)]
+
+
+def _delay_mix_weights(
+    config: RSNNConfig,
+    delay_decays: list[float],
+    rng: random.Random,
+) -> list[list[float]]:
+    if not config.delay_features:
+        return []
+    return [
+        [rng.uniform(0.20, 0.45) / len(delay_decays) for _ in delay_decays]
+        for _ in range(config.n_neurons)
+    ]
+
+
+def _empty_delay_traces(config: RSNNConfig, delay_decays: list[float]) -> list[list[float]]:
+    if not config.delay_features:
+        return []
+    return [
+        [0.0 for _ in delay_decays]
+        for _ in range(config.n_neurons)
+    ]
 
 
 def _build_recurrent_sources(config: RSNNConfig, rng: random.Random) -> list[list[int]]:
