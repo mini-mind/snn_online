@@ -169,7 +169,9 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 ## Next
 
-下一步工程优先级是把 `scalar + recurrent_delay_line + delay_features` 和 `per_neuron + recurrent_delay_line + plain` 作为两个候选主线，在不同难度标签下复测。只有在确认某个短期记忆机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
+跨难度复测显示：easy 下 `scalar + recurrent_delay_line + delay_features` 更好（reward `-0.038`，success `0.130`）；medium 下 reward 最好的是 `per_neuron + recurrent_delay_line + plain`（reward `0.816`），success 最好的是 `scalar + recurrent_delay_line + delay_features`（success `0.320`）；hard 下 `per_neuron + recurrent_delay_line + plain` 同时拿到更高 reward 和 success（reward `0.289`，success `0.210`），且速度更快。
+
+下一步工程优先级是把 `per_neuron + recurrent_delay_line + plain` 作为 hard / 长 horizon 主线，把 `scalar + recurrent_delay_line + delay_features` 作为 easy / success-oriented 对照。只有在确认短期记忆机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
 
 `runs/` 保持为忽略目录；使用 `--output-jsonl` 生成的逐 seed 结果和 summary 可以作为本地留档 artifact，不视为仓库内源码或基准真值。
 

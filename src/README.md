@@ -16,6 +16,7 @@
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
 | `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
 | `experiments/compare_delay_modulation_matrix.py` | 拆开 delay feature、连接延迟和调制模式的交互 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py` |
+| `experiments/compare_candidate_difficulties.py` | 复测候选机制在 easy / medium / hard 环境难度下的稳定性 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py` |
 | `experiments/summarize_jsonl_results.py` | 汇总 JSONL benchmark artifact | saved summary rows | `PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
@@ -256,6 +257,28 @@ best_reward=per_neuron_plain_rline reward=0.816 success=0.240
 best_success=scalar_delay_rline reward=0.691 success=0.320
 per_neuron_delay_rline reward=-0.717 success=0.090
 ```
+
+候选主线跨难度复测入口：
+
+```bash
+PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py
+```
+
+当前 preset 只改变现有 point robot 参数，不引入新环境动力学：
+
+- `easy`：`partial_goal_cue`，cue 10 steps，horizon 40。
+- `medium`：`partial_goal_cue`，cue 6 steps，horizon 60。
+- `hard`：`partial_goal_cue`，cue 3 steps，horizon 80。
+
+当前 5 seed / 80 episodes 结果：
+
+```text
+easy: scalar_delay_rline reward=-0.038 success=0.130; per_neuron_plain_rline reward=-0.115 success=0.050
+medium: scalar_delay_rline reward=0.691 success=0.320; per_neuron_plain_rline reward=0.816 success=0.240
+hard: scalar_delay_rline reward=-0.908 success=0.140; per_neuron_plain_rline reward=0.289 success=0.210
+```
+
+暂定判断：`scalar_delay_rline` 更像低难度 / 成功率导向方案；`per_neuron_plain_rline` 在长 horizon / 更短 cue 下更稳、更快。
 
 ### JSONL Summary
 

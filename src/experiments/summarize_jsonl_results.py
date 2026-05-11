@@ -143,6 +143,9 @@ def summarize_row(path: Path, row: dict[str, object]) -> str:
         ]
         condition_labels.sort()
         parts.extend(format_metrics(label, conditions[label]) for label in condition_labels)
+    elif isinstance(row.get("difficulties"), dict):
+        parts.extend(format_difficulty_metrics(row["difficulties"]))
+        parts.extend(format_best_by_difficulty(row.get("best_by_difficulty")))
     else:
         parts.extend(format_metrics(label, row[label]) for label in metric_labels)
     parts.append(format_deltas(row.get("delta")))
@@ -155,6 +158,37 @@ def format_best(value: object, label: str) -> str:
     if not isinstance(value, dict) or "condition" not in value:
         return f"{label}=na"
     return f"{label}={value['condition']}"
+
+
+def format_difficulty_metrics(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["difficulties=na"]
+    parts = []
+    for difficulty in sorted(value):
+        candidates = value[difficulty]
+        if not isinstance(candidates, dict):
+            continue
+        for candidate in sorted(candidates):
+            metrics = candidates[candidate]
+            if is_metric_block(metrics):
+                parts.append(format_metrics(f"{difficulty}/{candidate}", metrics))
+    return parts if parts else ["difficulties=na"]
+
+
+def format_best_by_difficulty(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["best_by_difficulty=na"]
+    parts = []
+    for difficulty in sorted(value):
+        row = value[difficulty]
+        if not isinstance(row, dict):
+            continue
+        reward = row.get("best_by_reward")
+        success = row.get("best_by_success")
+        reward_name = reward.get("candidate") if isinstance(reward, dict) else "na"
+        success_name = success.get("candidate") if isinstance(success, dict) else "na"
+        parts.append(f"{difficulty}[best_reward={reward_name} best_success={success_name}]")
+    return parts if parts else ["best_by_difficulty=na"]
 
 
 def main() -> int:
