@@ -14,6 +14,7 @@
 | `experiments/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py` |
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
+| `experiments/compare_mainline_components.py` | 按当前约束拆分主线组件，默认只跑稳定消融链，h4/h5 需显式 opt-in | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_mainline_components.py` |
 | `experiments/compare_mainline_history.py` | 比较主线历史阶段 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_mainline_history.py` |
 | `experiments/compare_candidate_difficulties.py` | 复测候选机制在 easy / medium / hard 环境难度下的稳定性 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py` |
 | `experiments/observe_quiet_dynamics.py` | 训练后进入低输入安静期，观察内部活动是否自然贴近任务活动 | quiet activity / reactivation similarity | `PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py` |
@@ -220,8 +221,10 @@ PYTHONPATH=src python src/experiments/compare_mainline_history.py
 - `h1_three_factor_recurrent`：最小三因子 recurrent baseline。
 - `h2_tess_recurrent`：加入多时间尺度 `tess_like` 局部 trace。
 - `h3_tess_recurrent_delay`：加入真正 recurrent delay line。
-- `h4_eprop_like_v0`：加入 per-neuron modulation，作为当前 e-prop-like 主线。
-- `h5_metaplasticity_v0`：在 e-prop-like 主线上加入突触级慢变量，持续高活动的连接更新更保守。
+- `h4_eprop_like_v0`：加入 per-neuron modulation；目前作为 e-prop-like 对照/诊断分支，不作为默认主线。
+- `h5_metaplasticity_v0`：在 e-prop-like 分支上加入突触级慢变量；当前结果为负，只保留用于诊断。
+
+下一步的对照目标，是复现一条尽量贴近当前约束的成熟局部学习方法，把它当作稳定参照，而不是继续把主线往更复杂的方向推。
 
 说明：
 
@@ -239,7 +242,7 @@ h4_eprop_like_v0 reward=0.289 success=0.210
 h5_metaplasticity_v0 reward=-0.265 success=0.190
 ```
 
-解释：移除外挂式 delay feature 后，`h4_eprop_like_v0` 在 hard preset 上还没有压过最朴素的 `three_factor` reward，只是在 success 上接近 recurrent delay 阶段。`h5_metaplasticity_v0` 的默认参数是负结果，说明简单地给高 eligibility 连接加保护会抑制学习；下一步应小范围扫描 metaplastic gate 或转向 homeostatic threshold。
+解释：移除外挂式 delay feature 后，`h4_eprop_like_v0` 在 hard preset 上还没有压过最朴素的 `three_factor` reward，只是在 success 上接近 recurrent delay 阶段。`h5_metaplasticity_v0` 的默认参数是负结果，说明简单地给高 eligibility 连接加保护会抑制学习。当前策略不是继续堆改进，而是回到稳定消融：先确认 `three_factor`、`tess_like`、`recurrent_delay_line` 每一步是否可复现、是否跨 seed 稳定。
 
 ## Next
 
@@ -257,7 +260,7 @@ PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py
 
 当前 5 seed / 80 episodes 结果：
 
-历史候选复测中的 `scalar_delay_rline` 依赖已移除的外挂式 delay feature，不再作为当前结论使用。当前 hard 主线是 `h4_eprop_like_v0`，并正在用 `h5_metaplasticity_v0` 检验稳定性改进。
+历史候选复测中的 `scalar_delay_rline` 依赖已移除的外挂式 delay feature，不再作为当前结论使用。当前不再把 `h4_eprop_like_v0` 当作 hard 主线；它与 `h5_metaplasticity_v0` 都降级为诊断分支。
 
 ### Quiet Internal Dynamics
 
@@ -278,7 +281,7 @@ PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py
 - `untrained_*`：同一 reference set 下的未训练网络 quiet 基线。只有训练后指标明显高于这个基线时，才值得进一步讨论 replay-like reactivation。
 - `quiet_*_uplift`：训练后 quiet 指标减去未训练基线。若 uplift 接近或低于 0，应解释为“暂未观察到超出基线的自然重激活”。
 
-当前 hard 主线单 seed 观察结果：
+当前 hard e-prop-like 诊断分支单 seed 观察结果：
 
 ```text
 final_eval_reward=-1.834 final_eval_success=0.050

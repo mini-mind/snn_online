@@ -22,8 +22,14 @@
 6. [SNN Deep RL / robot control](06-spiking-q-learning-robot-control.md)
 7. [SpikingBrain / 大规模类脉冲模型](07-spikingbrain.md)
 8. [NSLLM / neuromorphic spiking LLM](08-nsllm.md)
-9. [术语表：程序员视角理解当前实验](GLOSSARY.md)
-10. [实验路线：生物参数对照与环境难度矩阵](ROADMAP.md)
+9. [现代 SNN 局部学习路径总览](09-modern-local-learning-paths.md)
+10. [TESS: 时间与空间都局部的 SNN 学习路线](10-tess.md)
+11. [EchoSpike: 预测学习驱动的局部可塑性](11-echospike.md)
+12. [BrainTrace / pp-prop: 在线局部学习的工程化路线](12-braintrace.md)
+13. [DECOLLE: 本地监督的深层脉冲学习路线](13-decolle.md)
+14. [S-TLLR: 时间局部脉冲学习路线](14-s-tllr.md)
+15. [术语表：程序员视角理解当前实验](GLOSSARY.md)
+16. [实验路线：生物参数对照与环境难度矩阵](ROADMAP.md)
 
 ## 核心资料
 
@@ -98,6 +104,46 @@
 - Article: https://academic.oup.com/nsr/article/doi/10.1093/nsr/nwaf551/8365570
 - Guide: [08-nsllm.md](08-nsllm.md)
 - Relevance: 关注 neuromorphic / spike-based LLM 工程方向，可作为阶段 4 的旁支参考。
+
+### 9. 现代局部学习路径总览
+
+- Guide: [09-modern-local-learning-paths.md](09-modern-local-learning-paths.md)
+- Relevance: 把 e-prop、TESS、EchoSpike、BrainTrace、DECOLLE、S-TLLR 放到同一张路线图里，避免把不同路径混成一个主线。
+
+### 10. TESS
+
+- Title: TESS: A Scalable Temporally and Spatially Local Learning Rule for Spiking Neural Networks
+- arXiv: https://arxiv.org/abs/2502.01837
+- Guide: [10-tess.md](10-tess.md)
+- Relevance: 时间局部 + 空间局部的学习路线，适合做先进局部学习对照。
+
+### 11. EchoSpike
+
+- Title: EchoSpike Predictive Plasticity: An Online Local Learning Rule for Spiking Neural Networks
+- arXiv: https://arxiv.org/abs/2405.13976
+- Guide: [11-echospike.md](11-echospike.md)
+- Relevance: 预测学习 / 自监督局部塑性路线，适合观察内部状态和 quiet dynamics。
+
+### 12. BrainTrace / pp-prop
+
+- Title: Model-agnostic linear-memory online learning in spiking neural networks
+- Article: https://www.nature.com/articles/s41467-026-68453-w
+- Guide: [12-braintrace.md](12-braintrace.md)
+- Relevance: 在线局部学习的系统化路线，强调模型无关和线性内存。
+
+### 13. DECOLLE
+
+- Title: DECOLLE: Deep Continuous Local Learning for Event-based Neural Networks
+- arXiv: https://arxiv.org/abs/1906.08829
+- Guide: [13-decolle.md](13-decolle.md)
+- Relevance: 本地监督的深层 SNN 学习路线，适合作为层级局部学习对照。
+
+### 14. S-TLLR
+
+- Title: STDP-inspired temporal local learning rule for training spiking neural networks
+- arXiv: https://arxiv.org/abs/2503.06126
+- Guide: [14-s-tllr.md](14-s-tllr.md)
+- Relevance: 介于 STDP 和现代可训练局部规则之间的时间局部路线。
 
 ## 代码原型
 

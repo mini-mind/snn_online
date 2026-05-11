@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import hashlib
 from dataclasses import dataclass
 
 from models.common import clamp
@@ -75,21 +76,19 @@ class LocalRecurrentSpikingNetwork:
             rng=self.rng,
         )
         self.recurrent_sources = _build_recurrent_sources(config, self.rng)
+        recurrent_delay_rng = _rng_substream(self.rng, "recurrent_delays")
+        recurrent_weight_rng = _rng_substream(self.rng, "recurrent_weights")
         self.recurrent_delays = _build_recurrent_delays(
             config,
             self.recurrent_sources,
-            self.rng,
+            recurrent_delay_rng,
         )
-        self.recurrent_weights = [
-            [
-                self.rng.gauss(
-                    0.0,
-                    config.recurrent_scale / math.sqrt(max(1, len(row))),
-                )
-                for _ in row
-            ]
-            for row in self.recurrent_sources
-        ]
+        self.recurrent_weights = _build_recurrent_weights(
+            config,
+            self.recurrent_sources,
+            recurrent_weight_rng,
+        )
+        _advance_recurrent_init_rng(config, self.recurrent_sources, self.rng)
         self.bias = [self.rng.gauss(0.0, config.bias_scale) for _ in range(config.n_neurons)]
         self.thresholds = _thresholds(config, self.rng)
         self.reset_values = _reset_values(config, self.rng)
@@ -365,6 +364,45 @@ def _build_recurrent_delays(
         [rng.randint(1, _MAX_RECURRENT_DELAY) for _ in row]
         for row in recurrent_sources
     ]
+
+
+def _build_recurrent_weights(
+    config: RSNNConfig,
+    recurrent_sources: list[list[int]],
+    rng: random.Random,
+) -> list[list[float]]:
+    return [
+        [
+            rng.gauss(
+                0.0,
+                config.recurrent_scale / math.sqrt(max(1, len(row))),
+            )
+            for _ in row
+        ]
+        for row in recurrent_sources
+    ]
+
+
+def _advance_recurrent_init_rng(
+    config: RSNNConfig,
+    recurrent_sources: list[list[int]],
+    rng: random.Random,
+) -> None:
+    if config.recurrent_delay_line:
+        for row in recurrent_sources:
+            for _ in row:
+                rng.randint(1, _MAX_RECURRENT_DELAY)
+    for row in recurrent_sources:
+        scale = config.recurrent_scale / math.sqrt(max(1, len(row)))
+        for _ in row:
+            rng.gauss(0.0, scale)
+
+
+def _rng_substream(rng: random.Random, label: str) -> random.Random:
+    state_bytes = repr(rng.getstate()).encode("utf-8")
+    label_bytes = label.encode("ascii")
+    digest = hashlib.sha256(state_bytes + b":" + label_bytes).digest()
+    return random.Random(int.from_bytes(digest, "big"))
 
 
 def _thresholds(config: RSNNConfig, rng: random.Random) -> list[float]:

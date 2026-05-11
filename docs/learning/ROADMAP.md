@@ -71,11 +71,12 @@ delay / trace 是否帮助闭环控制
 ## Near-Term Plan
 
 1. **主线历史 benchmark**
-   - 对照：`three_factor`、`tess_like`、`tess_like + recurrent_delay_line`、`eprop_like_v0`、`metaplasticity_v0`。
+   - 对照：`three_factor`、`tess_like`、`tess_like + recurrent_delay_line`。
    - 任务：优先 `partial_goal_cue` hard preset。
    - 预算：先保持 5 seeds / 80 episodes。
    - 已移除外挂式 delay feature；它不再作为当前实验入口或核心对照。
-   - 当前结果：`eprop_like_v0` 尚未压过 `three_factor` reward；`metaplasticity_v0` 默认参数为负结果，说明稳定性机制需要更谨慎的门控或改走 homeostatic threshold。
+   - `eprop_like_v0` 和 `metaplasticity_v0` 现在只作为诊断分支，不再作为默认推进目标。
+   - 先进对照应优先选择与当前约束接近、且已形成成熟定义的局部学习路线，而不是继续堆叠未验证的改进。
 
 2. **生物参数表落到代码输出**
    - 在实验 summary 中记录关键时间常数、连接度、delay 开关和 trace decay。
@@ -85,9 +86,10 @@ delay / trace 是否帮助闭环控制
    - 给 point robot 配置增加难度命名或 summary 字段。
    - 初始只做文档和输出层标签，不急着复杂化环境。
 
-4. **使用 per-neuron modulation**
-   - 先用简单局部信号生成每 neuron modulation。
-   - 保持更新形式：`eligibility * modulation_j`。
+4. **先进对照独立化**
+   - 把 reward-based e-prop 作为成熟对照优先复现。
+   - 再按需要单独引入 TESS、EchoSpike、BrainTrace、DECOLLE、S-TLLR 这类不同路径。
+   - 不把这些路线揉成一个主线，不预设 replay / dreaming。
 
 5. **quiet internal dynamics**
    - 不设计显式 replay loop。
@@ -102,3 +104,21 @@ delay / trace 是否帮助闭环控制
 - 参数能说明对应的生物启发含义。
 - 环境难度变化能解释机制的优势和短板。
 - 没有通过外部 replay buffer 或手写规则掩盖局部学习本身。
+
+## Route Coverage
+
+当前教程把路线分成以下几类，后续实验只从这些类别里挑明确对照，不临时混搭：
+
+| Route | Tutorial | Role In This Repo |
+|---|---|---|
+| three-factor / STDP family | [02](02-three-factor-learning-rules.md) | 最小稳定 baseline |
+| e-prop family | [01](01-eprop.md) | 优先复现的成熟先进对照 |
+| ETLP | [03](03-etlp.md) | 事件驱动 / 硬件友好参考 |
+| local prediction / cognitive map | [04](04-cognitive-map-learner.md) | world model 和 planning 参考 |
+| model-based SNN RL / dreaming | [05](05-model-based-snn-rl.md) | 闭环控制与 replay 观察参考 |
+| robot control evaluation | [06](06-spiking-q-learning-robot-control.md) | 任务协议参考，不直接当学习规则 |
+| TESS | [10](10-tess.md) | 时间 + 空间局部学习对照 |
+| EchoSpike | [11](11-echospike.md) | 预测学习 / quiet dynamics 对照 |
+| BrainTrace / pp-prop | [12](12-braintrace.md) | 系统化在线学习参考 |
+| DECOLLE | [13](13-decolle.md) | 深层本地监督对照 |
+| S-TLLR | [14](14-s-tllr.md) | 时间局部规则对照 |

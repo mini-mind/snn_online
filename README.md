@@ -138,6 +138,7 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like --recurrent-delay-line
 PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
+PYTHONPATH=src python src/experiments/compare_mainline_components.py
 PYTHONPATH=src python src/experiments/compare_mainline_history.py
 PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
@@ -158,13 +159,15 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
    已加入 `--recurrent-delay-line`：recurrent edge 可以读取过去若干步的 source spike，用来检验连接本身的传输延迟是否帮助时序记忆。
 
 3. e-prop-like v0
-   当前 hard 主线是 `tess_like + recurrent_delay_line + per_neuron modulation`，对应本仓的简化 e-prop-like 路线：局部 eligibility trace 乘以目标神经元自己的 modulation。
+   这条线现在只保留为诊断分支，不再作为默认主线推进。当前更稳妥的做法是先把 `three_factor -> tess_like -> recurrent_delay_line` 这条消融链跑扎实，再决定是否重新引入 per-neuron modulation。
+
+下一步的对照目标，是复现一条尽量贴近当前约束的成熟局部学习方法，把它当作稳定参照，而不是继续把主线往更复杂的方向推。
 
 已废弃并移除的方向：外挂式 delay feature。它曾作为 readout shortcut 有过正结果，但不符合当前“内部 recurrent 动力学优先”的品味，并且和 per-neuron modulation 出现负交互，因此不再作为实验入口或核心对照。
 
 ## Next
 
-`compare_mainline_history.py` 已成为当前核心对照：`three_factor` -> `tess_like` -> `recurrent_delay_line` -> `eprop_like_v0` -> `metaplasticity_v0`。最新 hard preset 5 seed 结果显示，`eprop_like_v0` 还没有压过最朴素 `three_factor` 的 reward，只在 success 上接近 recurrent delay 阶段；`metaplasticity_v0` 默认参数是负结果。下一步应小范围诊断 metaplastic gate，或转向 homeostatic threshold 这类仍然局部、在线、少参数的稳定机制。
+`compare_mainline_history.py` 仍然保留完整历史链路，但当前研究重心已经收缩为前半段消融：先确认 `three_factor`、`tess_like`、`recurrent_delay_line` 的稳定收益，再讨论是否值得把 `per-neuron modulation`、`metaplasticity` 重新拉回主线。`h4_eprop_like_v0` 和 `h5_metaplasticity_v0` 目前只作为诊断分支，不再视为默认改进方向。
 
 quiet internal dynamics 已有第一版观察入口。hard 主线单 seed 结果显示：训练后 quiet 状态与任务期活动的相似度高于未训练基线，但没有达到重激活阈值。因此当前结论是“有任务痕迹，但还不能称为 replay / dreaming”。
 

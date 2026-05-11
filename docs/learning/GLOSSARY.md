@@ -15,7 +15,7 @@
 - **Eligibility trace**：突触本地的“最近是否相关”缓存。它不直接决定方向，只记录 pre/post 活动是否让这条连接值得更新。
 - **Three-factor rule**：`delta_w = lr * eligibility * modulation`。前两个因子来自突触局部活动，第三个因子是奖励、预测误差或价值反馈。
 - **Modulation signal**：低维反馈信号，不是反向传播梯度。当前 point robot 用 TD error 和 prediction error 混合成一个 scalar modulation。
-- **Neuron-specific modulation**：每个目标神经元有自己的 modulation。它比单个全局 scalar 更接近 e-prop 的 learning signal。
+- **Neuron-specific modulation**：每个目标神经元有自己的 modulation。它比单个全局 scalar 更接近 e-prop 的 learning signal，但当前只是诊断分支，不是默认主线。
 - **e-prop**：用在线 eligibility trace 和 learning signal 近似替代 BPTT 的 recurrent SNN 学习方法。本仓目前只有简化影子，还不是严格 e-prop。
 
 ## 时间结构
@@ -23,6 +23,11 @@
 - **STDP**：Spike-Timing-Dependent Plasticity。根据 pre spike 和 post spike 的先后顺序与时间间隔调整突触。
 - **Synchrony**：pre/post 活动在时间上是否接近同步。`tess_like` 里用多时间尺度 trace 捕捉这种关系。
 - **TESS-like**：本仓的简化多时间尺度局部规则，不是完整论文复现。它组合 fast/slow pre trace、post trace、eligibility 和 modulation。
+- **TESS**：同时强调时间局部和空间局部的 SNN 学习路线，适合作为独立对照，不应直接等同于本仓 `tess_like`。
+- **EchoSpike**：偏预测学习 / 自监督的局部塑性路线，更适合观察内部状态是否自然形成任务痕迹。
+- **BrainTrace / pp-prop**：更像在线局部学习的工程系统化方向，强调线性内存和模型无关的在线训练。
+- **DECOLLE**：每层都有本地监督头的深层 SNN 学习路线，适合深层事件流分类，不是当前 recurrent 控制主线。
+- **S-TLLR**：更训练友好的时间局部学习路线，可以看作 STDP 风格规则向可训练系统的一种延伸。
 - **Recurrent delay line**：让 recurrent edge 读取过去若干步的 source spike。它改变连接计算本身，接近突触传输延迟，而不是给 readout 额外外挂记忆特征。
 
 ## 闭环 agent
@@ -38,6 +43,7 @@
 - `src/models/point_robot_closed_loop.py`：RSNN feature extractor + world model head + TD value head。
 - `src/experiments/compare_plasticity_rules.py`：比较 `three_factor` 和 `tess_like`。
 - `src/experiments/compare_mainline_history.py`：比较主线历史阶段。
+- `src/experiments/compare_mainline_components.py`：当前稳定消融链和扩展分支的组件对照入口。
 - `src/envs/point_robot.py`：当前主要闭环任务环境，尤其是 `partial_goal_cue`。
 
-当前路线是：先在部分可观测点机器人上确认短期记忆机制，再推进 neuron-specific modulation、真正 delay line 和 replay/dreaming。
+当前路线是：先在部分可观测点机器人上确认短期记忆机制，再用成熟的局部学习对照验证稳定性；replay / dreaming 只看是否自然涌现，不预设设计。
