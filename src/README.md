@@ -13,6 +13,7 @@
 | `experiments/etlp_continuous_toy.py` | 连续输入 ETLP-like 分类 | teaching signal | `PYTHONPATH=src python src/experiments/etlp_continuous_toy.py` |
 | `experiments/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py` |
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
+| `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
 
@@ -132,6 +133,12 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like
 ```
 
+第一阶段 benchmark / 对照入口：
+
+```bash
+PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
+```
+
 关键指标：
 
 - `random_baseline reward/success/length`：同评估预算下随机策略的平均回报、成功率与步长，用于判断训练是否优于随机。
@@ -147,6 +154,29 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --observation-m
 ```
 
 这里的设计是：episode 前几步给出目标相对方向提示，之后隐藏方向，只保留自身位置、速度、进度和目标距离。这样就把任务从“瞬时反应控制”推向“需要在 recurrent state 里保留短期目标记忆”的设置。
+
+### Plasticity Rule Benchmark
+
+用途：作为第一阶段 benchmark，在固定 seed 范围和训练预算下直接比较 `three_factor` 与 `tess_like`。
+
+运行：
+
+```bash
+PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
+```
+
+说明：
+
+- 默认任务是 `partial_goal_cue`，因为它更依赖短期目标记忆。
+- 可通过 `--observation-mode full` 切回完整观测，不必为 full / partial 另拆第二个脚本。
+- 脚本会对两个规则分别在多 seed 上调用 `train_agent(...)`，打印每个 seed 的 `eval_reward`、`eval_success` 和 `elapsed_sec`。
+- 汇总输出包括：
+  - `mean_eval_reward`
+  - `mean_eval_success`
+  - `mean_elapsed_sec`
+  - `reward_gain_tess_like_minus_three_factor`
+  - `success_gain_tess_like_minus_three_factor`
+  - `speed_ratio_tess_like_vs_three_factor`
 
 ### LIF vs IZ 对比
 

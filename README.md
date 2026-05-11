@@ -135,6 +135,7 @@ PYTHONPATH=src python src/experiments/etlp_continuous_toy.py
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like
+PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 ```
@@ -143,6 +144,8 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 1. `tess_like` 多时间尺度局部 trace
    当前已接入单层 recurrent SNN，作为 `three_factor` baseline 的直接对照。
+
+第一阶段 benchmark 入口是 `src/experiments/compare_plasticity_rules.py`：它在固定 seed / 训练预算下比较 `three_factor` 与 `tess_like`，默认使用更依赖短期记忆的 `partial_goal_cue` 任务。
 
 2. learnable delay
    下一步优先在部分可观测点机器人上验证 delay 是否能提升短期记忆。
