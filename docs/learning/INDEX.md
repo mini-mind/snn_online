@@ -23,6 +23,7 @@
 7. [SpikingBrain / 大规模类脉冲模型](07-spikingbrain.md)
 8. [NSLLM / neuromorphic spiking LLM](08-nsllm.md)
 9. [术语表：程序员视角理解当前实验](GLOSSARY.md)
+10. [实验路线：生物参数对照与环境难度矩阵](ROADMAP.md)
 
 ## 核心资料
 

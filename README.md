@@ -118,6 +118,7 @@ physiology + task feedback + prediction error
 ## 项目入口
 
 - [Learning docs](docs/learning/INDEX.md)：跨领域研究手册与论文方法压缩。
+- [Experiment roadmap](docs/learning/ROADMAP.md)：后续实验推进、参数生物对照和环境难度矩阵。
 - [Minimal experiments](src/README.md)：当前实验入口、目录边界、运行命令和指标说明。
 
 ## 当前代码边界
@@ -169,3 +170,5 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 下一步工程优先级是先降低 delay feature 的计算成本，再确认它是否仍然值得保留。只有在确认 delay 机制对当前部分可观测任务持续有用之后，才进入 replay / dreaming。
 
 `runs/` 保持为忽略目录；使用 `--output-jsonl` 生成的逐 seed 结果和 summary 可以作为本地留档 artifact，不视为仓库内源码或基准真值。
+
+后续所有机制推进都要同时记录两个视角：参数是否能对照生物脑中的时间常数、连接度或调制强度；环境是否明确标注测试维度和难度等级，避免只看单一平均分。

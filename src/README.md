@@ -63,6 +63,11 @@ env observation / physiology
 
 ## Experiments
 
+实验入口应逐步补齐两个元信息：
+
+- 参数生物对照：关键 decay、阈值、连接度、delay、plasticity rate 要能解释为生物脑里的时间常数、发放阈值、稀疏连接或可塑性速度。
+- 环境测试维度：每个 benchmark 要说明它主要测试 observability、horizon、dynamics、goal structure、reward sparsity、action control 或 distribution shift 中的哪一类。
+
 ## Toy Learning
 
 ### ETLP Continuous Toy
