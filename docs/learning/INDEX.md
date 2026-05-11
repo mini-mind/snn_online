@@ -22,6 +22,7 @@
 6. [SNN Deep RL / robot control](06-spiking-q-learning-robot-control.md)
 7. [SpikingBrain / 大规模类脉冲模型](07-spikingbrain.md)
 8. [NSLLM / neuromorphic spiking LLM](08-nsllm.md)
+9. [术语表：程序员视角理解当前实验](GLOSSARY.md)
 
 ## 核心资料
 

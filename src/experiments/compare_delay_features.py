@@ -64,6 +64,7 @@ def run_comparison(
                         "goal_cue_steps": run_env_config.goal_cue_steps,
                         "max_steps": run_env_config.max_steps,
                         "delay_features": agent_config.delay_features,
+                        "recurrent_delay_line": agent_config.recurrent_delay_line,
                     },
                 )
         print()
@@ -111,6 +112,7 @@ def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds
         "recurrent_degree": base_config.recurrent_degree,
         "plasticity_rule": base_config.plasticity_rule,
         "neuron_model": base_config.neuron_model,
+        "recurrent_delay_line": base_config.recurrent_delay_line,
         "observation_mode": env_config.observation_mode,
         "goal_cue_steps": env_config.goal_cue_steps,
         "max_steps": env_config.max_steps,
@@ -136,6 +138,7 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]
     )
     parser.add_argument("--goal-cue-steps", type=int, default=PointRobotConfig.goal_cue_steps)
     parser.add_argument("--max-steps", type=int, default=PointRobotConfig.max_steps)
+    parser.add_argument("--recurrent-delay-line", action="store_true")
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--seed-start", type=int, default=31)
     parser.add_argument("--output-jsonl", default="")
@@ -149,6 +152,7 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]
             recurrent_degree=args.recurrent_degree,
             plasticity_rule=args.plasticity_rule,
             neuron_model=args.neuron_model,
+            recurrent_delay_line=args.recurrent_delay_line,
             randomize_intrinsics=True,
             seed=args.seed_start,
         ),
@@ -172,7 +176,8 @@ def main() -> None:
         f"n_neurons={agent_config.n_neurons} "
         f"recurrent_degree={agent_config.recurrent_degree} "
         f"plasticity_rule={agent_config.plasticity_rule} "
-        f"neuron_model={agent_config.neuron_model}"
+        f"neuron_model={agent_config.neuron_model} "
+        f"recurrent_delay_line={agent_config.recurrent_delay_line}"
     )
     if output_jsonl is not None:
         prepare_jsonl(output_jsonl)

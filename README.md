@@ -136,6 +136,7 @@ PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like --delay-features
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like --recurrent-delay-line
 PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 PYTHONPATH=src python src/experiments/compare_delay_features.py
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
@@ -157,7 +158,10 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 当前 5 seed 小基准显示：在 `tess_like + partial_goal_cue` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，但 wall time 约为 `1.61x`。
 
-3. dreaming / replay
+3. recurrent delay line
+   已加入 `--recurrent-delay-line`：recurrent edge 可以读取过去若干步的 source spike，用来区别“额外 delay feature”和“连接本身的传输延迟”。
+
+4. dreaming / replay
    在局部规则稳定后，再加入 model-based imagined experience，避免系统复杂度先失控。
 
 ## Next

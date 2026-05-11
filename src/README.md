@@ -141,6 +141,12 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like --delay-features
 ```
 
+recurrent delay line 入口：
+
+```bash
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like --recurrent-delay-line
+```
+
 第一阶段 benchmark / 对照入口：
 
 ```bash
@@ -209,6 +215,7 @@ PYTHONPATH=src python src/experiments/compare_delay_features.py
 
 - 默认使用 `tess_like` + `partial_goal_cue`，比较 `plain` 与 `delay` 两个条件。
 - `delay` 条件会把 RSNN feature 扩展为 `base spike feature + delay feature`。delay feature 是每个神经元的多时间尺度 spike trace 混合，混合权重由同一个低维 modulation signal 局部更新。
+- 可通过 `--recurrent-delay-line` 让 recurrent edge 读取过去若干步的 source spike，用来检验真正连接延迟是否有帮助。
 - 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫描。
 - 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary；这些 JSONL 文件按本地 artifact 处理，`runs/` 目录保持忽略。
 
