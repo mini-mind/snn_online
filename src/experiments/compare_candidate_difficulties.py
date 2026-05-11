@@ -30,15 +30,13 @@ DIFFICULTY_PRESETS = {
     },
 }
 
-CANDIDATES = {
-    "scalar_delay_rline": {
+CURRENT_CANDIDATES = {
+    "scalar_rline": {
         "modulation_mode": "scalar",
-        "delay_features": True,
         "recurrent_delay_line": True,
     },
-    "per_neuron_plain_rline": {
+    "per_neuron_rline": {
         "modulation_mode": "per_neuron",
-        "delay_features": False,
         "recurrent_delay_line": True,
     },
 }
@@ -66,7 +64,7 @@ def run_candidate_difficulties(
         env_config = env_config_for_difficulty(difficulty, seed=base_config.seed + 7)
         aggregated[difficulty] = {}
         print(f"difficulty={difficulty} benchmark_id={env_config.task_metadata()['benchmark_id']}")
-        for candidate, settings in CANDIDATES.items():
+        for candidate, settings in CURRENT_CANDIDATES.items():
             print(f"  candidate={candidate}")
             rows = []
             for seed in seeds:
@@ -139,7 +137,6 @@ def run_row(
         "plasticity_rule": agent_config.plasticity_rule,
         "neuron_model": agent_config.neuron_model,
         "modulation_mode": agent_config.modulation_mode,
-        "delay_features": agent_config.delay_features,
         "recurrent_delay_line": agent_config.recurrent_delay_line,
         "observation_mode": env_config.observation_mode,
         "goal_cue_steps": env_config.goal_cue_steps,
@@ -174,7 +171,7 @@ def config_to_dict(base_config: AgentConfig, difficulties: list[str], seeds: lis
         "plasticity_rule": base_config.plasticity_rule,
         "neuron_model": base_config.neuron_model,
         "difficulty_presets": difficulties,
-        "candidates": sorted(CANDIDATES),
+        "candidates": sorted(CURRENT_CANDIDATES),
         "seeds": seeds,
     }
 

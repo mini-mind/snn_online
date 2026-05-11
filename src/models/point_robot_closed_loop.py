@@ -35,7 +35,6 @@ class AgentConfig:
     tess_slow_decay: float = RSNNConfig.tess_slow_decay
     tess_post_decay: float = RSNNConfig.tess_post_decay
     tess_eligibility_decay: float = RSNNConfig.tess_eligibility_decay
-    delay_features: bool = False
     recurrent_delay_line: bool = False
     modulation_mode: str = "per_neuron"
     neuron_model: str = "lif"
@@ -56,7 +55,6 @@ def rsnn_config_from_agent(config: AgentConfig, input_dim: int = 1) -> RSNNConfi
         tess_slow_decay=config.tess_slow_decay,
         tess_post_decay=config.tess_post_decay,
         tess_eligibility_decay=config.tess_eligibility_decay,
-        delay_features=config.delay_features,
         recurrent_delay_line=config.recurrent_delay_line,
         randomize_intrinsics=config.randomize_intrinsics,
         seed=config.seed + 1,
@@ -125,10 +123,6 @@ def biological_parameter_metadata(config: AgentConfig) -> dict[str, dict[str, ob
         "tess_eligibility_decay": _biological_param_entry(
             "eligibility memory",
             rsnn_config.tess_eligibility_decay,
-        ),
-        "delay_features": _biological_param_entry(
-            "short-term residual activity readout",
-            rsnn_config.delay_features,
         ),
         "recurrent_delay_line": _biological_param_entry(
             "recurrent transmission delay",
@@ -417,7 +411,6 @@ def train_agent(
             f"tess_slow_decay={config.tess_slow_decay:.3f} "
             f"tess_post_decay={config.tess_post_decay:.3f} "
             f"tess_eligibility_decay={config.tess_eligibility_decay:.3f} "
-            f"delay_features={config.delay_features} "
             f"recurrent_delay_line={config.recurrent_delay_line} "
             f"randomize_intrinsics={config.randomize_intrinsics} "
             f"max_steps={env_config.max_steps} "
@@ -504,7 +497,6 @@ def train_agent(
     summary: dict[str, object] = {
         "biological_params": biological_params,
         "neuron_model": config.neuron_model,
-        "delay_features": config.delay_features,
         "recurrent_delay_line": config.recurrent_delay_line,
         "modulation_mode": config.modulation_mode,
         "seed": float(config.seed),

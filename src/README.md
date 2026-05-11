@@ -14,8 +14,7 @@
 | `experiments/cognitive_map_etlp_toy.py` | 学 gridworld 转移图并规划 | prediction error | `PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py` |
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
-| `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
-| `experiments/compare_delay_modulation_matrix.py` | 拆开 delay feature、连接延迟和调制模式的交互 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py` |
+| `experiments/compare_mainline_history.py` | 比较主线历史阶段 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_mainline_history.py` |
 | `experiments/compare_candidate_difficulties.py` | 复测候选机制在 easy / medium / hard 环境难度下的稳定性 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py` |
 | `experiments/observe_quiet_dynamics.py` | 训练后进入低输入安静期，观察内部活动是否自然贴近任务活动 | quiet activity / reactivation similarity | `PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py` |
 | `experiments/summarize_jsonl_results.py` | 汇总 JSONL benchmark artifact | saved summary rows | `PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl` |
@@ -143,12 +142,6 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like
 ```
 
-短期 delay feature 入口：
-
-```bash
-PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 --eval-every 40 --eval-episodes 40 --plasticity-rule tess_like --delay-features
-```
-
 recurrent delay line 入口：
 
 ```bash
@@ -212,52 +205,41 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 - `full`，5 seeds，80 episodes：`tess_like` 相对 `three_factor` 的 reward gain 约 `-0.671`，success gain 约 `-0.190`，wall time 约慢 `6.5%`。
 - 这说明 `tess_like` 更像是短期记忆任务的候选机制，而不是全观测控制下的直接替代。
 
-### Delay Feature Benchmark
+### Mainline History Benchmark
 
-用途：在不增加外部依赖和复杂参数面的前提下，检验多时间尺度 spike delay trace 是否改善 `partial_goal_cue` 的短期目标记忆。
+用途：用项目自身发展阶段做对照，避免继续依赖已废弃的外挂式 delay feature。
 
 运行：
 
 ```bash
-PYTHONPATH=src python src/experiments/compare_delay_features.py
+PYTHONPATH=src python src/experiments/compare_mainline_history.py
 ```
+
+阶段：
+
+- `h1_three_factor_recurrent`：最小三因子 recurrent baseline。
+- `h2_tess_recurrent`：加入多时间尺度 `tess_like` 局部 trace。
+- `h3_tess_recurrent_delay`：加入真正 recurrent delay line。
+- `h4_eprop_like_v0`：加入 per-neuron modulation，作为当前 e-prop-like 主线。
 
 说明：
 
-- 默认使用 `tess_like` + `partial_goal_cue`，比较 `plain` 与 `delay` 两个条件。
-- `delay` 条件会把 RSNN feature 扩展为 `base spike feature + delay feature`。delay feature 是每个神经元的多时间尺度 spike trace 混合，混合权重由同一个低维 modulation signal 局部更新。
-- 可通过 `--recurrent-delay-line` 让 recurrent edge 读取过去若干步的 source spike，用来检验真正连接延迟是否有帮助。
-- 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫描。
-- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary；这些 JSONL 文件按本地 artifact 处理，`runs/` 目录保持忽略。
-- JSONL 的 `run` 行会带 `biological_params`；`summary` 行会按 `plain` / `delay` 条件分别保留这块 metadata，便于回看 delay 开关对应的生物参照。
-- point robot 相关 summary 和 JSONL 运行行会额外带出稳定任务标签：`task_family`、`benchmark_id`、`observability_level`、`horizon_level`、`reward_level`、`dynamics_level`、`goal_structure_level`、`action_level`、`distribution_level`。当前映射保持简单直接：`full` / `partial_goal_cue_<steps>`、`short|medium|long_horizon_<max_steps>`、`dense_reward`、`deterministic_dynamics`、`single_random_goal`、`discrete_actions`、`train_eval_same`。
+- 默认任务是 hard `partial_goal_cue`：cue 3 steps，horizon 80。
+- JSONL summary 会记录每个阶段的 reward / success / wall time。
+- 外挂式 delay feature 已移除。它曾作为 readout shortcut 有过历史正结果，但不符合当前“内部 recurrent 动力学优先”的约束，也和 per-neuron modulation 有负交互。
 
-当前小基准结论：
-
-- 历史结果：`partial_goal_cue`，5 seeds，80 episodes，`tess_like` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，wall time 约 `1.61x`。
-- 当前结果：加入 per-neuron modulation 后，在 `tess_like + partial_goal_cue + recurrent_delay_line` 下，delay feature 相对 plain RSNN 的 reward gain 约 `-1.533`，success gain 约 `-0.150`，wall time 约 `1.53x`。
-- 8 条件矩阵结果：最佳 reward 是 `per_neuron_plain_rline`（reward `0.816`，success `0.240`）；最佳 success 是 `scalar_delay_rline`（reward `0.691`，success `0.320`）。
-- 这说明 delay feature、连接延迟和 per-neuron modulation 之间存在负交互；下一步应把 `scalar_delay_rline` 和 `per_neuron_plain_rline` 当作候选主线复测，而不是继续堆叠机制。
-
-## Next
-
-当前工程优先级是用不同环境难度复测 `scalar_delay_rline` 和 `per_neuron_plain_rline`，确认到底是“显式 delay readout + 全局调制”更稳，还是“连接延迟 + per-neuron 调制”更稳。只有在确认机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
-
-交互矩阵入口：
-
-```bash
-PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py --include-recurrent-delay-line
-```
-
-它会比较 `scalar` / `per_neuron` 调制、plain / delay feature、是否启用 recurrent delay-line 的组合。先用小 seed 跑定位，再决定是否做 5 seed 正式 benchmark。
-
-当前 5 seed / 80 episodes / `partial_goal_cue` 结果：
+当前 5 seed / 80 episodes 结果：
 
 ```text
-best_reward=per_neuron_plain_rline reward=0.816 success=0.240
-best_success=scalar_delay_rline reward=0.691 success=0.320
-per_neuron_delay_rline reward=-0.717 success=0.090
+h1_three_factor_recurrent reward=0.433 success=0.200
+h2_tess_recurrent reward=-0.011 success=0.170
+h3_tess_recurrent_delay reward=0.142 success=0.210
+h4_eprop_like_v0 reward=0.289 success=0.210
 ```
+
+解释：移除外挂式 delay feature 后，`h4_eprop_like_v0` 在 hard preset 上还没有压过最朴素的 `three_factor` reward，只是在 success 上接近 recurrent delay 阶段。当前主线不是“已经赢了”，而是一个更符合约束、值得继续加 metaplasticity / homeostatic stability 的方向。
+
+## Next
 
 候选主线跨难度复测入口：
 
@@ -273,13 +255,7 @@ PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py
 
 当前 5 seed / 80 episodes 结果：
 
-```text
-easy: scalar_delay_rline reward=-0.038 success=0.130; per_neuron_plain_rline reward=-0.115 success=0.050
-medium: scalar_delay_rline reward=0.691 success=0.320; per_neuron_plain_rline reward=0.816 success=0.240
-hard: scalar_delay_rline reward=-0.908 success=0.140; per_neuron_plain_rline reward=0.289 success=0.210
-```
-
-暂定判断：`scalar_delay_rline` 更像低难度 / 成功率导向方案；`per_neuron_plain_rline` 在长 horizon / 更短 cue 下更稳、更快。
+历史候选复测中的 `scalar_delay_rline` 依赖已移除的外挂式 delay feature，不再作为当前结论使用。当前 hard 主线是 `h4_eprop_like_v0`，但它需要继续通过 metaplasticity / homeostatic threshold 增强稳定性。
 
 ### Quiet Internal Dynamics
 
@@ -371,8 +347,11 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 1. `tess_like` 多时间尺度 trace：
    当前已接入 `models/recurrent_spiking.py`，作为 `three_factor` baseline 的第一阶段对照。
 
-2. delay features：
-   当前已接入 `--delay-features`，优先在 `partial_goal_cue` 上验证是否改善短期目标记忆。
+2. recurrent delay line：
+   当前已接入 `--recurrent-delay-line`，用于验证连接本身的传输延迟是否改善短期记忆。
 
-3. dreaming / replay：
-   在局部规则稳定后，再把 imagined experience 加回闭环系统。
+3. e-prop-like v0：
+   当前已接入 per-neuron modulation，保持 `eligibility_ij * modulation_j` 的局部更新形式。
+
+4. quiet internal dynamics：
+   只观察低输入安静期内部状态，不设计显式 replay 训练。

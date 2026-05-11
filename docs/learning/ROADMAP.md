@@ -24,7 +24,6 @@
 | `plastic_lr` | 突触可塑性速度 | 学习是否过快遗忘或过慢无效 |
 | `weight_decay` | 稳态 / 突触归一化压力 | 是否限制权重发散 |
 | `tess_*_decay` | 多时间尺度 trace | fast / slow trace 是否覆盖不同事件间隔 |
-| `delay_features` | 短期活动残留特征 | 是否只是 readout shortcut，还是帮助内部状态 |
 | `recurrent_delay_line` | 突触传输延迟 | 延迟分布是否帮助时序记忆 |
 
 后续每加入一个新参数，应补充：
@@ -67,11 +66,12 @@ delay / trace 是否帮助闭环控制
 
 ## Near-Term Plan
 
-1. **固定 delay-line benchmark**
-   - 对照：`tess_like`、`tess_like + delay_features`、`tess_like + recurrent_delay_line`、两者组合。
-   - 任务：`partial_goal_cue`。
+1. **主线历史 benchmark**
+   - 对照：`three_factor`、`tess_like`、`tess_like + recurrent_delay_line`、`eprop_like_v0`。
+   - 任务：优先 `partial_goal_cue` hard preset。
    - 预算：先保持 5 seeds / 80 episodes。
-   - 当前结果提示：per-neuron modulation 加入后，`recurrent_delay_line + delay_features` 组合为负结果；8 条件矩阵中 `per_neuron_plain_rline` reward 最好，`scalar_delay_rline` success 最好。跨难度复测后，`per_neuron_plain_rline` 在 hard preset 更稳，`scalar_delay_rline` 在 easy / medium success 上更强。
+   - 已移除外挂式 delay feature；它不再作为当前实验入口或核心对照。
+   - 当前结果：`eprop_like_v0` 尚未压过 `three_factor` reward，说明主线需要稳定性机制，而不是声明胜出。
 
 2. **生物参数表落到代码输出**
    - 在实验 summary 中记录关键时间常数、连接度、delay 开关和 trace decay。

@@ -11,8 +11,7 @@ from pathlib import Path
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Read JSONL outputs from compare_plasticity_rules.py or "
-            "compare_delay_features.py and print compact summary lines."
+            "Read JSONL outputs from experiment comparison scripts and print compact summary lines."
         )
     )
     parser.add_argument(
@@ -79,7 +78,6 @@ def format_config(config: object) -> str:
         "goal_cue_steps",
         "max_steps",
         "include_recurrent_delay_line",
-        "delay_features",
         "tess_fast_decay",
         "tess_slow_decay",
         "tess_post_decay",
@@ -146,18 +144,37 @@ def summarize_row(path: Path, row: dict[str, object]) -> str:
     elif isinstance(row.get("difficulties"), dict):
         parts.extend(format_difficulty_metrics(row["difficulties"]))
         parts.extend(format_best_by_difficulty(row.get("best_by_difficulty")))
+    elif isinstance(row.get("stages"), dict):
+        parts.extend(format_stage_metrics(row["stages"]))
+        parts.append(format_best(row.get("best_by_reward"), "best_reward"))
+        parts.append(format_best(row.get("best_by_success"), "best_success"))
     else:
         parts.extend(format_metrics(label, row[label]) for label in metric_labels)
     parts.append(format_deltas(row.get("delta")))
-    parts.append(format_best(row.get("best_by_reward"), "best_reward"))
-    parts.append(format_best(row.get("best_by_success"), "best_success"))
+    if not isinstance(row.get("stages"), dict):
+        parts.append(format_best(row.get("best_by_reward"), "best_reward"))
+        parts.append(format_best(row.get("best_by_success"), "best_success"))
     return " | ".join(parts)
 
 
 def format_best(value: object, label: str) -> str:
-    if not isinstance(value, dict) or "condition" not in value:
+    if not isinstance(value, dict):
         return f"{label}=na"
-    return f"{label}={value['condition']}"
+    name = value.get("condition", value.get("stage", value.get("candidate")))
+    if name is None:
+        return f"{label}=na"
+    return f"{label}={name}"
+
+
+def format_stage_metrics(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return ["stages=na"]
+    parts = []
+    for stage in sorted(value):
+        metrics = value[stage]
+        if is_metric_block(metrics):
+            parts.append(format_metrics(stage, metrics))
+    return parts if parts else ["stages=na"]
 
 
 def format_difficulty_metrics(value: object) -> list[str]:

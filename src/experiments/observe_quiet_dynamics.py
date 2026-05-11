@@ -200,7 +200,7 @@ def run_experiment(
     }
     summary: dict[str, object] = {
         "type": "summary",
-        "candidate": "per_neuron_plain_rline",
+        "candidate": "h4_eprop_like_v0",
         "seed": config.seed,
         "episodes": config.episodes,
         "eval_every": config.eval_every,
@@ -212,7 +212,6 @@ def run_experiment(
         "recurrent_degree": config.recurrent_degree,
         "plasticity_rule": config.plasticity_rule,
         "modulation_mode": config.modulation_mode,
-        "delay_features": config.delay_features,
         "recurrent_delay_line": config.recurrent_delay_line,
         "final_eval_reward": final_eval_reward,
         "final_eval_success": final_eval_success,
@@ -283,7 +282,6 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, int, int, float, Path |
         recurrent_degree=args.recurrent_degree,
         plasticity_rule="tess_like",
         modulation_mode="per_neuron",
-        delay_features=False,
         recurrent_delay_line=True,
         randomize_intrinsics=True,
         seed=args.seed,
@@ -301,7 +299,7 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, int, int, float, Path |
 def main() -> None:
     config, env_config, reference_episodes, quiet_steps, threshold, output_jsonl = parse_args()
     print(
-        f"quiet_observation candidate=per_neuron_plain_rline "
+        f"quiet_observation candidate=h4_eprop_like_v0 "
         f"benchmark_id={env_config.task_metadata()['benchmark_id']} "
         f"episodes={config.episodes} reference_episodes={reference_episodes} "
         f"quiet_steps={quiet_steps} threshold={threshold}"

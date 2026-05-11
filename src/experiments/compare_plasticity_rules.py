@@ -38,7 +38,6 @@ def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds
         "tess_slow_decay": base_config.tess_slow_decay,
         "tess_post_decay": base_config.tess_post_decay,
         "tess_eligibility_decay": base_config.tess_eligibility_decay,
-        "delay_features": base_config.delay_features,
         "seeds": seeds,
     }
 
@@ -86,7 +85,6 @@ def run_comparison(
                         "tess_slow_decay": agent_config.tess_slow_decay,
                         "tess_post_decay": agent_config.tess_post_decay,
                         "tess_eligibility_decay": agent_config.tess_eligibility_decay,
-                        "delay_features": agent_config.delay_features,
                     },
                 )
         print()
@@ -138,7 +136,6 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]
     parser.add_argument("--tess-slow-decay", type=float, default=AgentConfig.tess_slow_decay)
     parser.add_argument("--tess-post-decay", type=float, default=AgentConfig.tess_post_decay)
     parser.add_argument("--tess-eligibility-decay", type=float, default=AgentConfig.tess_eligibility_decay)
-    parser.add_argument("--delay-features", action="store_true")
     parser.add_argument("--neuron-model", choices=["lif", "izh"], default=AgentConfig.neuron_model)
     parser.add_argument(
         "--observation-mode",
@@ -162,7 +159,6 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]
             tess_slow_decay=args.tess_slow_decay,
             tess_post_decay=args.tess_post_decay,
             tess_eligibility_decay=args.tess_eligibility_decay,
-            delay_features=args.delay_features,
             neuron_model=args.neuron_model,
             randomize_intrinsics=True,
             seed=args.seed_start,
@@ -190,8 +186,7 @@ def main() -> None:
         f"tess_fast_decay={agent_config.tess_fast_decay:.3f} "
         f"tess_slow_decay={agent_config.tess_slow_decay:.3f} "
         f"tess_post_decay={agent_config.tess_post_decay:.3f} "
-        f"tess_eligibility_decay={agent_config.tess_eligibility_decay:.3f} "
-        f"delay_features={agent_config.delay_features}"
+        f"tess_eligibility_decay={agent_config.tess_eligibility_decay:.3f}"
     )
     if output_jsonl is not None:
         prepare_jsonl(output_jsonl)

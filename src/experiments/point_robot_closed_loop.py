@@ -27,7 +27,6 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
     parser.add_argument("--tess-slow-decay", type=float, default=AgentConfig.tess_slow_decay)
     parser.add_argument("--tess-post-decay", type=float, default=AgentConfig.tess_post_decay)
     parser.add_argument("--tess-eligibility-decay", type=float, default=AgentConfig.tess_eligibility_decay)
-    parser.add_argument("--delay-features", action="store_true")
     parser.add_argument("--recurrent-delay-line", action="store_true")
     parser.add_argument("--modulation-mode", choices=["scalar", "per_neuron"], default=AgentConfig.modulation_mode)
     parser.add_argument("--neuron-model", choices=["lif", "izh"], default=AgentConfig.neuron_model)
@@ -56,7 +55,6 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
             tess_slow_decay=args.tess_slow_decay,
             tess_post_decay=args.tess_post_decay,
             tess_eligibility_decay=args.tess_eligibility_decay,
-            delay_features=args.delay_features,
             recurrent_delay_line=args.recurrent_delay_line,
             modulation_mode=args.modulation_mode,
             neuron_model=args.neuron_model,

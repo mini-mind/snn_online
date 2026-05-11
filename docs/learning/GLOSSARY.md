@@ -23,8 +23,7 @@
 - **STDP**：Spike-Timing-Dependent Plasticity。根据 pre spike 和 post spike 的先后顺序与时间间隔调整突触。
 - **Synchrony**：pre/post 活动在时间上是否接近同步。`tess_like` 里用多时间尺度 trace 捕捉这种关系。
 - **TESS-like**：本仓的简化多时间尺度局部规则，不是完整论文复现。它组合 fast/slow pre trace、post trace、eligibility 和 modulation。
-- **Delay feature**：把过去 spike 的多时间尺度 trace 作为额外 feature 输出，不改变 spike 传播路径。
-- **Recurrent delay line**：让 recurrent edge 读取过去若干步的 source spike。它改变连接计算本身，比 delay feature 更接近真正的突触传输延迟。
+- **Recurrent delay line**：让 recurrent edge 读取过去若干步的 source spike。它改变连接计算本身，接近突触传输延迟，而不是给 readout 额外外挂记忆特征。
 
 ## 闭环 agent
 
@@ -35,10 +34,10 @@
 
 ## 本仓当前地图
 
-- `src/models/recurrent_spiking.py`：LIF/Izh RSNN、`three_factor`、`tess_like`、delay feature、recurrent delay line 和 modulation 接口。
+- `src/models/recurrent_spiking.py`：LIF/Izh RSNN、`three_factor`、`tess_like`、recurrent delay line 和 modulation 接口。
 - `src/models/point_robot_closed_loop.py`：RSNN feature extractor + world model head + TD value head。
 - `src/experiments/compare_plasticity_rules.py`：比较 `three_factor` 和 `tess_like`。
-- `src/experiments/compare_delay_features.py`：比较 plain RSNN 和 delay feature，可选择打开 recurrent delay line。
+- `src/experiments/compare_mainline_history.py`：比较主线历史阶段。
 - `src/envs/point_robot.py`：当前主要闭环任务环境，尤其是 `partial_goal_cue`。
 
 当前路线是：先在部分可观测点机器人上确认短期记忆机制，再推进 neuron-specific modulation、真正 delay line 和 replay/dreaming。
