@@ -37,6 +37,7 @@ class AgentConfig:
     tess_eligibility_decay: float = RSNNConfig.tess_eligibility_decay
     delay_features: bool = False
     recurrent_delay_line: bool = False
+    modulation_mode: str = "per_neuron"
     neuron_model: str = "lif"
     randomize_intrinsics: bool = True
     seed: int = 31
@@ -132,6 +133,10 @@ def biological_parameter_metadata(config: AgentConfig) -> dict[str, dict[str, ob
         "recurrent_delay_line": _biological_param_entry(
             "recurrent transmission delay",
             rsnn_config.recurrent_delay_line,
+        ),
+        "modulation_mode": _biological_param_entry(
+            "global neuromodulator or neuron-targeted learning signal",
+            config.modulation_mode,
         ),
     }
 
@@ -279,9 +284,12 @@ class ClosedLoopPointRobotAgent:
         next_features: list[float],
         td_error: float,
         prediction_mse: float,
-    ) -> list[float]:
+    ) -> float | list[float]:
         """Build neuron-local modulation from reward and prediction signals."""
         global_signal = clamp(0.35 * td_error - 0.15 * prediction_mse, -1.0, 1.0)
+        if self.config.modulation_mode == "scalar":
+            return global_signal
+
         neuron_count = self.config.n_neurons
         modulation = []
         for index in range(neuron_count):
@@ -400,11 +408,12 @@ def train_agent(
     if verbose:
         print("R-SNN point robot closed loop")
         print(
-            f"seed={config.seed} model={config.neuron_model} "
-            f"episodes={config.episodes} n_neurons={config.n_neurons} "
-            f"recurrent_degree={config.recurrent_degree} "
-            f"plasticity_rule={config.plasticity_rule} "
-            f"tess_fast_decay={config.tess_fast_decay:.3f} "
+        f"seed={config.seed} model={config.neuron_model} "
+        f"episodes={config.episodes} n_neurons={config.n_neurons} "
+        f"recurrent_degree={config.recurrent_degree} "
+        f"plasticity_rule={config.plasticity_rule} "
+        f"modulation_mode={config.modulation_mode} "
+        f"tess_fast_decay={config.tess_fast_decay:.3f} "
             f"tess_slow_decay={config.tess_slow_decay:.3f} "
             f"tess_post_decay={config.tess_post_decay:.3f} "
             f"tess_eligibility_decay={config.tess_eligibility_decay:.3f} "
@@ -497,6 +506,7 @@ def train_agent(
         "neuron_model": config.neuron_model,
         "delay_features": config.delay_features,
         "recurrent_delay_line": config.recurrent_delay_line,
+        "modulation_mode": config.modulation_mode,
         "seed": float(config.seed),
         "random_reward": random_reward,
         "random_success": random_success,
@@ -552,4 +562,8 @@ def validate_agent_config(config: AgentConfig) -> None:
     if config.plasticity_rule not in {"three_factor", "tess_like"}:
         raise ValueError(
             f"plasticity_rule must be one of {{'three_factor', 'tess_like'}}, got {config.plasticity_rule}"
+        )
+    if config.modulation_mode not in {"scalar", "per_neuron"}:
+        raise ValueError(
+            f"modulation_mode must be one of {{'scalar', 'per_neuron'}}, got {config.modulation_mode}"
         )

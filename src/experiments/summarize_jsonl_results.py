@@ -74,9 +74,11 @@ def format_config(config: object) -> str:
         "recurrent_degree",
         "plasticity_rule",
         "neuron_model",
+        "modulation_mode",
         "observation_mode",
         "goal_cue_steps",
         "max_steps",
+        "include_recurrent_delay_line",
         "delay_features",
         "tess_fast_decay",
         "tess_slow_decay",
@@ -132,9 +134,27 @@ def summarize_row(path: Path, row: dict[str, object]) -> str:
     metric_labels = [key for key, value in row.items() if key != "delta" and key != "config" and is_metric_block(value)]
     metric_labels.sort()
     parts = [str(path), format_config(row.get("config"))]
-    parts.extend(format_metrics(label, row[label]) for label in metric_labels)
+    conditions = row.get("conditions")
+    if isinstance(conditions, dict):
+        condition_labels = [
+            key
+            for key, value in conditions.items()
+            if isinstance(key, str) and is_metric_block(value)
+        ]
+        condition_labels.sort()
+        parts.extend(format_metrics(label, conditions[label]) for label in condition_labels)
+    else:
+        parts.extend(format_metrics(label, row[label]) for label in metric_labels)
     parts.append(format_deltas(row.get("delta")))
+    parts.append(format_best(row.get("best_by_reward"), "best_reward"))
+    parts.append(format_best(row.get("best_by_success"), "best_success"))
     return " | ".join(parts)
+
+
+def format_best(value: object, label: str) -> str:
+    if not isinstance(value, dict) or "condition" not in value:
+        return f"{label}=na"
+    return f"{label}={value['condition']}"
 
 
 def main() -> int:

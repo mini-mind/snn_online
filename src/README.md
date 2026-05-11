@@ -15,6 +15,7 @@
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
 | `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
+| `experiments/compare_delay_modulation_matrix.py` | 拆开 delay feature、连接延迟和调制模式的交互 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py` |
 | `experiments/summarize_jsonl_results.py` | 汇总 JSONL benchmark artifact | saved summary rows | `PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
@@ -167,6 +168,7 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 - `eval_len`：关闭学习后平均 episode 长度。
 - `biological_params`：verbose 输出和 `train_agent(...)` summary 会附带紧凑参数字典，记录关键 decay / threshold / recurrent / delay 开关的生物类比标签和当前 repo 值。
 - recurrent plasticity 现在使用 per-neuron modulation：全局 TD error / prediction MSE 仍是低维调制来源，但会按每个神经元的近期活动和活动变化生成 `modulation_j`，再进入 `eligibility_ij * modulation_j` 的局部更新。
+- 可用 `--modulation-mode scalar` 切回单一全局调制，用于和 `per_neuron` 做机制对照。
 
 部分可观测版本：
 
@@ -232,11 +234,28 @@ PYTHONPATH=src python src/experiments/compare_delay_features.py
 
 - 历史结果：`partial_goal_cue`，5 seeds，80 episodes，`tess_like` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，wall time 约 `1.61x`。
 - 当前结果：加入 per-neuron modulation 后，在 `tess_like + partial_goal_cue + recurrent_delay_line` 下，delay feature 相对 plain RSNN 的 reward gain 约 `-1.533`，success gain 约 `-0.150`，wall time 约 `1.53x`。
-- 这说明 delay feature、连接延迟和 per-neuron modulation 之间存在负交互；下一步应拆开对照，而不是继续堆叠机制。
+- 8 条件矩阵结果：最佳 reward 是 `per_neuron_plain_rline`（reward `0.816`，success `0.240`）；最佳 success 是 `scalar_delay_rline`（reward `0.691`，success `0.320`）。
+- 这说明 delay feature、连接延迟和 per-neuron modulation 之间存在负交互；下一步应把 `scalar_delay_rline` 和 `per_neuron_plain_rline` 当作候选主线复测，而不是继续堆叠机制。
 
 ## Next
 
-当前工程优先级是先拆开 `delay_features`、`recurrent_delay_line` 和 per-neuron modulation 的交互，再用同一类部分可观测任务确认哪一种短期记忆机制值得保留。只有在确认机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
+当前工程优先级是用不同环境难度复测 `scalar_delay_rline` 和 `per_neuron_plain_rline`，确认到底是“显式 delay readout + 全局调制”更稳，还是“连接延迟 + per-neuron 调制”更稳。只有在确认机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
+
+交互矩阵入口：
+
+```bash
+PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py --include-recurrent-delay-line
+```
+
+它会比较 `scalar` / `per_neuron` 调制、plain / delay feature、是否启用 recurrent delay-line 的组合。先用小 seed 跑定位，再决定是否做 5 seed 正式 benchmark。
+
+当前 5 seed / 80 episodes / `partial_goal_cue` 结果：
+
+```text
+best_reward=per_neuron_plain_rline reward=0.816 success=0.240
+best_success=scalar_delay_rline reward=0.691 success=0.320
+per_neuron_delay_rline reward=-0.717 success=0.090
+```
 
 ### JSONL Summary
 

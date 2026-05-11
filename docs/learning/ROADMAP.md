@@ -71,7 +71,7 @@ delay / trace 是否帮助闭环控制
    - 对照：`tess_like`、`tess_like + delay_features`、`tess_like + recurrent_delay_line`、两者组合。
    - 任务：`partial_goal_cue`。
    - 预算：先保持 5 seeds / 80 episodes。
-   - 当前结果提示：per-neuron modulation 加入后，`recurrent_delay_line + delay_features` 组合为负结果，因此下一轮要拆开调制策略和 delay 机制，而不是继续叠加。
+   - 当前结果提示：per-neuron modulation 加入后，`recurrent_delay_line + delay_features` 组合为负结果；8 条件矩阵中 `per_neuron_plain_rline` reward 最好，`scalar_delay_rline` success 最好，因此下一轮应在环境难度维度上复测这两个候选主线。
 
 2. **生物参数表落到代码输出**
    - 在实验 summary 中记录关键时间常数、连接度、delay 开关和 trace decay。
