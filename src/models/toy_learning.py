@@ -1,4 +1,4 @@
-"""Toy learners rewritten to use `dynn.Net`."""
+"""Pure-Python toy learners for local online learning experiments."""
 
 from __future__ import annotations
 
@@ -6,12 +6,10 @@ import math
 import random
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
 
 from envs.grid_world import ACTIONS as GRID_ACTIONS
 from envs.grid_world import GridWorld, GridWorldConfig
 from models.common import argmax, clamp, mean_squared
-from models.dynn_support import dynn
 
 
 @dataclass
@@ -78,113 +76,17 @@ class ContinuousTemporalTask:
         return [class_zero, class_one]
 
 
-class _ContinuousRule:
-    """Local ETLP-style readout update for the continuous toy."""
-
-    def __init__(self, config: ContinuousToyConfig) -> None:
-        self.config = config
-
-    def initialize_traces(self, *, edge_block) -> dict[str, tuple[float, ...]]:
-        return {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
-
-    def step(
-        self,
-        *,
-        edge_block,
-        traces,
-        pre_activity,
-        post_activity,
-        learning_rate,
-        modulation,
-        node_states,
-        step_index=0,
-        return_weights=False,
-    ):
-        del learning_rate, modulation, step_index
-        trace_state = traces or {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
-        prev_pre = tuple(float(value) for value in trace_state.get("pre", ()))
-        next_pre = tuple(
-            self.config.trace_decay * prev + float(activity)
-            for prev, activity in zip(prev_pre, pre_activity, strict=True)
-        )
-        state = node_states.get(edge_block.target_node_set, {})
-        voltage = tuple(float(value) for value in state.get("voltage", ()))
-        post_factor = tuple(
-            triangular_pseudo_derivative(value, self.config.threshold, self.config.pseudo_width)
-            for value in voltage
-        )
-        teaching_signal = tuple(float(value) for value in post_activity)
-        deltas = tuple(
-            teaching_signal[target] * post_factor[target] * next_pre[source]
-            for source, target in zip(edge_block.source_indices, edge_block.target_indices, strict=True)
-        )
-        next_weights = tuple(
-            clamp(
-                (float(weight) + self.config.lr * delta) * (1.0 - self.config.weight_decay),
-                -3.0,
-                3.0,
-            )
-            for weight, delta in zip(edge_block.weights, deltas, strict=True)
-        )
-        abs_deltas = tuple(
-            abs(after - before)
-            for before, after in zip(edge_block.weights, next_weights, strict=True)
-        )
-        result = {
-            "traces": {"pre": next_pre},
-            "weight_update_count": len(deltas),
-            "mean_abs_weight_delta": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else 0.0,
-            "max_abs_weight_delta": max(abs_deltas, default=0.0),
-        }
-        if return_weights:
-            result["weights"] = next_weights
-        return result
-
-
-class DynnContinuousToy:
-    """Continuous classification toy using `dynn` as the execution core."""
+class ContinuousLocalClassifier:
+    """ETLP-like readout with local pre traces and class teaching signals."""
 
     def __init__(self, config: ContinuousToyConfig, rng: random.Random) -> None:
         self.config = config
         self.rng = rng
-        self.graph = dynn.build(
-            {"id": "continuous-toy"},
-            {
-                "node_sets": [
-                    {"id": "obs", "size": config.input_dim, "node_type": "linear"},
-                    {
-                        "id": "cls",
-                        "size": config.n_classes,
-                        "node_type": "linear",
-                        "parameters": {"bias": [0.0] * config.n_classes},
-                    },
-                ],
-                "edge_sets": [
-                    {
-                        "id": "obs_to_cls",
-                        "source": {"node_set": "obs"},
-                        "target": {"node_set": "cls"},
-                        "representation": {
-                            "kind": "explicit",
-                            "edges": [
-                                {
-                                    "source": source,
-                                    "target": target,
-                                    "weight": rng.gauss(0.0, 0.18),
-                                }
-                                for target in range(config.n_classes)
-                                for source in range(config.input_dim)
-                            ],
-                        },
-                    }
-                ],
-                "ports": [
-                    {"id": "obs", "node_set": "obs", "kind": "input"},
-                    {"id": "cls", "node_set": "cls", "kind": "output"},
-                ],
-            },
-        )
-        self.net = dynn.Net(self.graph, plasticity=_ContinuousRule(config), learning_rate=config.lr)
+        self.weights = [
+            [rng.gauss(0.0, 0.18) for _ in range(config.input_dim)]
+            for _ in range(config.n_classes)
+        ]
+        self.bias = [0.0 for _ in range(config.n_classes)]
 
     def predict(self, sequence: list[list[float]]) -> int:
         logits = self._run(sequence, label=None, learn=False)
@@ -195,28 +97,53 @@ class DynnContinuousToy:
         return argmax(logits)
 
     def weight_norm(self) -> float:
-        weights = getattr(self.net, "_edge_weights", {}).get("obs_to_cls", ())
-        return math.sqrt(sum(weight * weight for weight in weights))
+        return math.sqrt(sum(weight * weight for row in self.weights for weight in row))
 
     def _run(self, sequence: list[list[float]], label: int | None, learn: bool) -> list[float]:
-        _reset_net_state(self.net, keep_traces=False)
+        pre_trace = [0.0 for _ in range(self.config.input_dim)]
+        voltage = [0.0 for _ in range(self.config.n_classes)]
         readout = [0.0 for _ in range(self.config.n_classes)]
         target = [0.0 for _ in range(self.config.n_classes)] if label is not None else None
         if target is not None and label is not None:
             target[label] = 1.0
         for analog_input in sequence:
-            target_signal = [0.0 for _ in range(self.config.n_classes)]
+            pre_trace = [
+                self.config.trace_decay * previous + value
+                for previous, value in zip(pre_trace, analog_input, strict=True)
+            ]
+            voltage = [
+                self.config.membrane_decay * previous
+                + sum(weight * value for weight, value in zip(row, analog_input, strict=True))
+                + self.bias[class_index]
+                for class_index, (previous, row) in enumerate(zip(voltage, self.weights, strict=True))
+            ]
+            readout = [0.88 * prev + current for prev, current in zip(readout, voltage, strict=True)]
             if learn and target is not None:
                 probabilities = softmax(readout)
-                target_signal = [goal - prob for goal, prob in zip(target, probabilities, strict=True)]
-            output = self.net.step(
-                {"obs": analog_input},
-                outputs={"cls": target_signal},
-                modulation=1.0 if learn and target is not None else 0.0,
-            )
-            logits = list(output.node("cls"))
-            readout = [0.88 * prev + current for prev, current in zip(readout, logits, strict=True)]
+                teaching = [
+                    goal - probability
+                    for goal, probability in zip(target, probabilities, strict=True)
+                ]
+                self._apply_teaching(pre_trace, voltage, teaching)
         return readout
+
+    def _apply_teaching(
+        self,
+        pre_trace: list[float],
+        voltage: list[float],
+        teaching: list[float],
+    ) -> None:
+        for class_index in range(self.config.n_classes):
+            post_factor = triangular_pseudo_derivative(
+                voltage[class_index],
+                self.config.threshold,
+                self.config.pseudo_width,
+            )
+            for input_index, trace in enumerate(pre_trace):
+                delta = teaching[class_index] * post_factor * trace
+                weight = self.weights[class_index][input_index]
+                next_weight = (weight + self.config.lr * delta) * (1.0 - self.config.weight_decay)
+                self.weights[class_index][input_index] = clamp(next_weight, -3.0, 3.0)
 
 
 @dataclass
@@ -236,146 +163,49 @@ class CognitiveMapConfig:
     seed: int = 11
 
 
-class _TransitionRule:
-    """Action-conditioned local prediction update."""
-
-    def __init__(self, config: CognitiveMapConfig, feature_dim: int) -> None:
-        self.config = config
-        self.feature_dim = feature_dim
-
-    def initialize_traces(self, *, edge_block) -> dict[str, tuple[float, ...]]:
-        return {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
-
-    def step(
-        self,
-        *,
-        edge_block,
-        traces,
-        pre_activity,
-        post_activity,
-        learning_rate,
-        modulation,
-        node_states,
-        step_index=0,
-        return_weights=False,
-    ):
-        del learning_rate, modulation, step_index
-        target_signal = tuple(float(value) for value in post_activity)
-        if not target_signal:
-            result = {
-                "traces": traces or {"pre": tuple(0.0 for _ in range(edge_block.source_count))},
-                "weight_update_count": 0,
-                "mean_abs_weight_delta": 0.0,
-                "max_abs_weight_delta": 0.0,
-            }
-            if return_weights:
-                result["weights"] = tuple(edge_block.weights)
-            return result
-        trace_state = traces or {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
-        prev_pre = tuple(float(value) for value in trace_state.get("pre", ()))
-        next_pre = tuple(
-            self.config.trace_decay * prev + float(activity)
-            for prev, activity in zip(prev_pre, pre_activity, strict=True)
-        )
-        state = node_states.get(edge_block.target_node_set, {})
-        predicted = tuple(float(value) for value in state.get("voltage", ()))
-        if len(predicted) != len(target_signal):
-            predicted = tuple(0.0 for _ in range(len(target_signal)))
-        error = tuple(
-            target - output
-            for target, output in zip(target_signal, predicted, strict=True)
-        )
-        deltas = tuple(
-            error[target] * next_pre[source]
-            for source, target in zip(edge_block.source_indices, edge_block.target_indices, strict=True)
-        )
-        next_weights = tuple(
-            clamp(
-                (float(weight) + self.config.lr * delta) * (1.0 - self.config.weight_decay),
-                -2.0,
-                2.0,
-            )
-            for weight, delta in zip(edge_block.weights, deltas, strict=True)
-        )
-        abs_deltas = tuple(
-            abs(after - before)
-            for before, after in zip(edge_block.weights, next_weights, strict=True)
-        )
-        result = {
-            "traces": {"pre": next_pre},
-            "weight_update_count": len(deltas),
-            "mean_abs_weight_delta": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else 0.0,
-            "max_abs_weight_delta": max(abs_deltas, default=0.0),
-        }
-        if return_weights:
-            result["weights"] = next_weights
-        return result
-
-
-class DynnLocalTransitionLearner:
-    """Local transition learner using one `dynn` graph for all actions."""
+class LocalTransitionLearner:
+    """Action-conditioned local predictor with one weight matrix per action."""
 
     def __init__(self, config: CognitiveMapConfig, rng: random.Random, feature_dim: int) -> None:
         self.config = config
         self.rng = rng
         self.feature_dim = feature_dim
-        node_sets = [{"id": "state", "size": feature_dim, "node_type": "linear"}]
-        edge_sets = []
-        ports = [{"id": "state", "node_set": "state", "kind": "input"}]
         scale = 0.03 / math.sqrt(feature_dim)
-        for action in GRID_ACTIONS:
-            pred_id = f"pred_{action}"
-            node_sets.append({"id": pred_id, "size": feature_dim, "node_type": "linear"})
-            ports.append({"id": pred_id, "node_set": pred_id, "kind": "output"})
-            edge_sets.append(
-                {
-                    "id": f"state_to_{pred_id}",
-                    "source": {"node_set": "state"},
-                    "target": {"node_set": pred_id},
-                    "representation": {
-                        "kind": "explicit",
-                        "edges": [
-                            {
-                                "source": source,
-                                "target": target,
-                                "weight": rng.gauss(0.0, scale),
-                            }
-                            for target in range(feature_dim)
-                            for source in range(feature_dim)
-                        ],
-                    },
-                }
-            )
-        self.port_to_node = {action: f"pred_{action}" for action in GRID_ACTIONS}
-        self.graph = dynn.build(
-            {"id": "cognitive-map-toy"},
-            {"node_sets": node_sets, "edge_sets": edge_sets, "ports": ports},
-        )
-        self.net = dynn.Net(
-            self.graph,
-            plasticity=_TransitionRule(config, feature_dim),
-            learning_rate=config.lr,
-        )
+        self.weights = {
+            action: [
+                [rng.gauss(0.0, scale) for _ in range(feature_dim)]
+                for _ in range(feature_dim)
+            ]
+            for action in GRID_ACTIONS
+        }
+        self.pre_trace = [0.0 for _ in range(feature_dim)]
 
     def predict(self, state_code: list[float], action: str) -> list[float]:
-        _reset_net_state(self.net, keep_traces=True)
-        output = self.net.step(
-            {"state": state_code},
-            outputs={self.port_to_node[action]: [0.0] * self.feature_dim},
-            modulation=0.0,
-        )
-        return list(output.node(self.port_to_node[action]))
+        return [
+            sum(weight * value for weight, value in zip(row, state_code, strict=True))
+            for row in self.weights[action]
+        ]
 
     def learn(self, state_code: list[float], action: str, next_code: list[float]) -> float:
-        _reset_net_state(self.net, keep_traces=True)
-        output = self.net.step(
-            {"state": state_code},
-            outputs={self.port_to_node[action]: next_code},
-            modulation=1.0,
-        )
-        predicted = list(output.node(self.port_to_node[action]))
-        error = [target - output for target, output in zip(next_code, predicted, strict=True)]
-        return mean_squared(error)
+        self.pre_trace = [
+            self.config.trace_decay * previous + value
+            for previous, value in zip(self.pre_trace, state_code, strict=True)
+        ]
+        predicted = self.predict(state_code, action)
+        errors = [
+            target - output
+            for target, output in zip(next_code, predicted, strict=True)
+        ]
+        action_weights = self.weights[action]
+        for output_index, error in enumerate(errors):
+            row = action_weights[output_index]
+            clipped_error = clamp(error, -1.0, 1.0)
+            for input_index, trace in enumerate(self.pre_trace):
+                next_weight = (row[input_index] + self.config.lr * clipped_error * trace) * (
+                    1.0 - self.config.weight_decay
+                )
+                row[input_index] = clamp(next_weight, -2.0, 2.0)
+        return mean_squared(errors)
 
     def decoded_transition(self, world: GridWorld, state: tuple[int, int], action: str) -> tuple[int, int]:
         predicted_code = self.predict(world.state_codes[state], action)
@@ -411,7 +241,7 @@ class Planner:
         return None
 
 
-def evaluate_continuous_toy(model: DynnContinuousToy, task: ContinuousTemporalTask, step: int, samples: int) -> float:
+def evaluate_continuous_toy(model: ContinuousLocalClassifier, task: ContinuousTemporalTask, step: int, samples: int) -> float:
     correct = 0
     for offset in range(samples):
         sequence, label = task.sample(step + offset)
@@ -422,7 +252,7 @@ def evaluate_continuous_toy(model: DynnContinuousToy, task: ContinuousTemporalTa
 def train_continuous_toy(config: ContinuousToyConfig) -> None:
     rng = random.Random(config.seed)
     task = ContinuousTemporalTask(config, rng)
-    model = DynnContinuousToy(config, rng)
+    model = ContinuousLocalClassifier(config, rng)
 
     print("ETLP-like continuous-input toy")
     print(f"seed={config.seed} train_steps={config.train_steps} seq_len={config.seq_len}")
@@ -453,7 +283,7 @@ def train_continuous_toy(config: ContinuousToyConfig) -> None:
             window_correct = 0
 
 
-def train_step_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearner, rng: random.Random, step: int) -> float:
+def train_step_cognitive_map(world: GridWorld, learner: LocalTransitionLearner, rng: random.Random, step: int) -> float:
     if step % 37 == 0:
         world.reset()
     state = world.state
@@ -464,24 +294,7 @@ def train_step_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearn
     return learner.learn(state_code, action, next_code)
 
 
-def train_step_cognitive_map_with_trace(
-    world: GridWorld,
-    learner: DynnLocalTransitionLearner,
-    rng: random.Random,
-    step: int,
-) -> tuple[float, tuple[int, int], str, tuple[int, int]]:
-    if step % 37 == 0:
-        world.reset()
-    state = world.state
-    action = rng.choice(GRID_ACTIONS)
-    state_code = world.encode(state)
-    next_state = world.step(action)
-    next_code = world.encode(next_state)
-    error = learner.learn(state_code, action, next_code)
-    return error, state, action, next_state
-
-
-def evaluate_cognitive_map(world: GridWorld, learner: DynnLocalTransitionLearner, rng: random.Random, config: CognitiveMapConfig) -> tuple[float, float, float]:
+def evaluate_cognitive_map(world: GridWorld, learner: LocalTransitionLearner, rng: random.Random, config: CognitiveMapConfig) -> tuple[float, float, float]:
     transition_correct = 0
     transition_total = 0
     graph = learner.learned_graph(world)
@@ -539,7 +352,7 @@ def train_cognitive_map(config: CognitiveMapConfig) -> None:
         ),
         rng,
     )
-    learner = DynnLocalTransitionLearner(config, rng, world.config.feature_dim)
+    learner = LocalTransitionLearner(config, rng, world.config.feature_dim)
 
     print("Cognitive Map + ETLP-like local prediction toy")
     print(
@@ -570,546 +383,6 @@ def train_cognitive_map(config: CognitiveMapConfig) -> None:
             error_window = 0.0
 
 
-def _variable_spec(
-    name: str,
-    label: str,
-    label_zh: str,
-    *,
-    role: str,
-) -> dict[str, str]:
-    return {
-        "name": name,
-        "label": label,
-        "label_zh": label_zh,
-        "role": role,
-    }
-
-
-def _indexed_variable_specs(
-    prefix: str,
-    count: int,
-    *,
-    label_prefix: str,
-    label_prefix_zh: str,
-    role: str,
-) -> list[dict[str, str]]:
-    return [
-        _variable_spec(
-            f"{prefix}_{index:03d}",
-            f"{label_prefix} {index}",
-            f"{label_prefix_zh}{index}",
-            role=role,
-        )
-        for index in range(count)
-    ]
-
-
-def _ordered_unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
-
-
-def _component_annotation(
-    annotation_type: str,
-    target: str,
-    label: str,
-    *,
-    label_zh: str,
-    layer_id: str,
-    member_kind: str,
-    variable_specs: list[dict[str, str]] | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload = {
-        "label_zh": label_zh,
-        "layer_id": layer_id,
-        "member_kind": member_kind,
-    }
-    if variable_specs is not None:
-        payload["variable_names"] = [spec["name"] for spec in variable_specs]
-        payload["variables"] = variable_specs
-    if metadata:
-        payload.update(metadata)
-    return {
-        "type": annotation_type,
-        "target": target,
-        "label": label,
-        "metadata": payload,
-    }
-
-
-def _grid_world_environment_variables() -> list[dict[str, str]]:
-    return [
-        _variable_spec("state_x", "state x", "状态横坐标", role="environment"),
-        _variable_spec("state_y", "state y", "状态纵坐标", role="environment"),
-        _variable_spec("next_state_x", "next state x", "下一状态横坐标", role="environment"),
-        _variable_spec("next_state_y", "next state y", "下一状态纵坐标", role="environment"),
-        _variable_spec("action", "action", "动作", role="environment"),
-    ]
-
-
-def build_cognitive_map_export_topology(
-    learner: DynnLocalTransitionLearner,
-    world: GridWorld,
-    config: CognitiveMapConfig,
-) -> dict[str, Any]:
-    base_topology = learner.graph.topology
-    feature_dim = learner.feature_dim
-    state_variables = _indexed_variable_specs(
-        "state_code",
-        feature_dim,
-        label_prefix="state code",
-        label_prefix_zh="状态编码 ",
-        role="state_code",
-    )
-    node_variable_index: dict[str, list[dict[str, str]]] = {}
-    port_variable_index: dict[str, list[dict[str, str]]] = {}
-    annotations: list[dict[str, Any]] = []
-    node_sets: list[dict[str, Any]] = []
-    ports: list[dict[str, Any]] = []
-
-    for node_set in base_topology.get("node_sets", []):
-        node_copy = dict(node_set)
-        node_id = str(node_copy["id"])
-        raw_parameters = node_copy.get("parameters", {})
-        parameters = dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
-        if node_id == "state":
-            layer_id = "layer_2_interface"
-            display_label = "State Code Population"
-            display_label_zh = "状态编码群"
-            variable_specs = state_variables
-            tags = ["layer:interface", "component:state_code"]
-        else:
-            action_name = node_id.removeprefix("pred_")
-            layer_id = "layer_4_prediction_planning"
-            display_label = f"Transition Predictor {action_name}"
-            display_label_zh = f"{action_name} 转移预测群"
-            variable_specs = _indexed_variable_specs(
-                f"{node_id}_feature",
-                int(node_copy["size"]),
-                label_prefix=f"{node_id} feature",
-                label_prefix_zh=f"{node_id} 特征 ",
-                role="prediction_feature",
-            )
-            tags = ["layer:core_model", "component:transition_predictor", f"action:{action_name}"]
-        parameters["export"] = {
-            "display_label": display_label,
-            "display_label_zh": display_label_zh,
-            "layer_id": layer_id,
-            "variable_names": [spec["name"] for spec in variable_specs],
-            "variables": variable_specs,
-        }
-        node_copy["parameters"] = parameters
-        node_copy["tags"] = _ordered_unique(list(node_copy.get("tags", [])) + tags)
-        node_sets.append(node_copy)
-        node_variable_index[node_id] = variable_specs
-        annotations.append(
-            _component_annotation(
-                "display_label",
-                node_id,
-                display_label,
-                label_zh=display_label_zh,
-                layer_id=layer_id,
-                member_kind="node_set",
-                variable_specs=variable_specs,
-                metadata={"count": int(node_copy["size"])},
-            )
-        )
-
-    for port in base_topology.get("ports", []):
-        port_copy = dict(port)
-        port_id = str(port_copy["id"])
-        params = dict(port_copy.get("params", {})) if isinstance(port_copy.get("params", {}), dict) else {}
-        if port_id == "state":
-            layer_id = "layer_2_interface"
-            display_label = "State Input Port"
-            display_label_zh = "状态输入端口"
-        else:
-            action_name = port_id.removeprefix("pred_")
-            layer_id = "layer_4_prediction_planning"
-            display_label = f"Prediction Port {action_name}"
-            display_label_zh = f"{action_name} 预测输出端口"
-        variable_specs = node_variable_index.get(str(port_copy.get("node_set", "")), [])
-        params["export"] = {
-            "display_label": display_label,
-            "display_label_zh": display_label_zh,
-            "layer_id": layer_id,
-            "variable_names": [spec["name"] for spec in variable_specs],
-            "variables": variable_specs,
-        }
-        port_copy["params"] = params
-        ports.append(port_copy)
-        port_variable_index[port_id] = variable_specs
-        annotations.append(
-            _component_annotation(
-                "display_label",
-                port_id,
-                display_label,
-                label_zh=display_label_zh,
-                layer_id=layer_id,
-                member_kind="port",
-                variable_specs=variable_specs,
-            )
-        )
-
-    edge_sets: list[dict[str, Any]] = []
-    artifact_specs: list[dict[str, Any]] = []
-    for edge_set in base_topology.get("edge_sets", []):
-        edge_copy = dict(edge_set)
-        edge_id = str(edge_copy["id"])
-        source_id = str(edge_copy["source"]["node_set"])
-        target_id = str(edge_copy["target"]["node_set"])
-        action_name = target_id.removeprefix("pred_")
-        source_variables = node_variable_index.get(source_id, [])
-        target_variables = node_variable_index.get(target_id, [])
-        display_label = f"{source_id} -> {target_id}"
-        display_label_zh = f"{source_id} 到 {target_id}"
-        edge_copy["tags"] = _ordered_unique(
-            list(edge_copy.get("tags", []))
-            + ["layer:prediction_planning", "component:transition_mapping", f"action:{action_name}"]
-        )
-        edge_copy["annotations"] = [
-            _component_annotation(
-                "display_label",
-                edge_id,
-                display_label,
-                label_zh=display_label_zh,
-                layer_id="layer_4_prediction_planning",
-                member_kind="edge_set",
-                metadata={
-                    "action": action_name,
-                    "source_variable_names": [spec["name"] for spec in source_variables],
-                    "target_variable_names": [spec["name"] for spec in target_variables],
-                },
-            )
-        ]
-        edge_sets.append(edge_copy)
-        representation = edge_set.get("representation", {})
-        edges = []
-        if isinstance(representation, dict):
-            edges = list(representation.get("edges", []))
-        artifact_specs.append(
-            {
-                "artifact_id": f"{edge_id}-edges",
-                "kind": "weight_summary",
-                "path": f"topology/edges/{edge_id}.json",
-                "media_type": "application/json",
-                "summary": {
-                    "label": display_label,
-                    "label_zh": display_label_zh,
-                    "edge_count": len(edges),
-                    "action": action_name,
-                },
-                "payload": {
-                    "schema_version": 1,
-                    "artifact_id": f"{edge_id}-edges",
-                    "edge_set_id": edge_id,
-                    "label": display_label,
-                    "label_zh": display_label_zh,
-                    "action": action_name,
-                    "source_node_set": source_id,
-                    "target_node_set": target_id,
-                    "source_variable_names": [spec["name"] for spec in source_variables],
-                    "target_variable_names": [spec["name"] for spec in target_variables],
-                    "edges": edges,
-                },
-            }
-        )
-
-    structure_payload = {
-        "schema_version": 1,
-        "tree_id": "grid-world-subgraph-tree",
-        "label": "Grid World Nested Subgraph",
-        "label_zh": "网格世界嵌套子图",
-        "root": {
-            "id": "cognitive_map_model",
-            "label": "Cognitive Map Model",
-            "label_zh": "认知地图模型",
-            "input_gateways": [{"id": "state_input", "port": "state", "label": "State Input", "label_zh": "状态输入"}],
-            "groups": [
-                {
-                    "id": "environment_group",
-                    "order": 1,
-                    "label": "Environment",
-                    "label_zh": "环境",
-                    "variables": _grid_world_environment_variables(),
-                    "metadata": {
-                        "grid_size": world.config.grid_size,
-                        "obstacle_count": len(world.obstacles),
-                        "action_names": list(GRID_ACTIONS),
-                    },
-                },
-                {
-                    "id": "state_interface_group",
-                    "order": 2,
-                    "label": "State Interface",
-                    "label_zh": "状态接口",
-                    "member_node_sets": ["state"],
-                    "input_gateways": [{"id": "state_input", "port": "state", "label": "State Input", "label_zh": "状态输入"}],
-                },
-                {
-                    "id": "transition_predictor_group",
-                    "order": 3,
-                    "label": "Transition Predictors",
-                    "label_zh": "转移预测器",
-                    "groups": [
-                        {
-                            "id": f"predictor_{node_id.removeprefix('pred_')}",
-                            "order": index,
-                            "label": f"Predictor {node_id.removeprefix('pred_')}",
-                            "label_zh": f"{node_id.removeprefix('pred_')} 预测器",
-                            "member_node_sets": [node_id],
-                        }
-                        for index, node_id in enumerate(
-                            [node_id for node_id in node_variable_index if node_id != "state"],
-                            start=1,
-                        )
-                    ],
-                },
-            ],
-        },
-    }
-    artifact_specs.append(
-        {
-            "artifact_id": "topology-subgraph-tree",
-            "kind": "topology_structure",
-            "path": "topology/subgraph-tree.json",
-            "media_type": "application/json",
-            "summary": {
-                "label": "Grid World Nested Subgraph",
-                "label_zh": "网格世界嵌套子图",
-                "root_group": "cognitive_map_model",
-            },
-            "payload": structure_payload,
-        }
-    )
-    artifact_specs.append(
-        {
-            "artifact_id": "grid-world-environment",
-            "kind": "task_environment",
-            "path": "environment/grid-world-environment.json",
-            "media_type": "application/json",
-            "summary": {
-                "label": "Grid World Environment",
-                "label_zh": "网格世界环境",
-                "grid_size": world.config.grid_size,
-                "feature_dim": config.feature_dim,
-            },
-            "payload": {
-                "schema_version": 1,
-                "label": "Grid World Environment",
-                "label_zh": "网格世界环境",
-                "environment": "grid_world",
-                "variable_names": [spec["name"] for spec in _grid_world_environment_variables()],
-                "variables": _grid_world_environment_variables(),
-                "config": {
-                    "grid_size": world.config.grid_size,
-                    "feature_dim": config.feature_dim,
-                    "noise": config.noise,
-                },
-            },
-        }
-    )
-
-    annotations.append({"type": "subgraph_tree", "label": "grid_world_nested_subgraph", "metadata": structure_payload})
-    return {
-        "node_sets": node_sets,
-        "edge_sets": edge_sets,
-        "ports": ports,
-        "annotations": annotations,
-        "metadata": {
-            "label": "Cognitive Map Topology",
-            "label_zh": "认知地图拓扑",
-            "environment": "grid_world",
-            "subgraph_tree": structure_payload,
-        },
-        "artifact_specs": artifact_specs,
-    }
-
-
-def train_cognitive_map_with_summary(
-    config: CognitiveMapConfig,
-) -> dict[str, float | str | dict[str, Any] | list[dict[str, Any]]]:
-    validate_cognitive_map_config(config)
-    rng = random.Random(config.seed)
-    world = GridWorld(
-        GridWorldConfig(
-            grid_size=config.grid_size,
-            feature_dim=config.feature_dim,
-            noise=config.noise,
-            seed=config.seed,
-        ),
-        rng,
-    )
-    learner = DynnLocalTransitionLearner(config, rng, world.config.feature_dim)
-
-    run_id = f"run-grid-world-seed-{config.seed}"
-    events: list[dict[str, Any]] = [
-        {
-            "schema_version": 1,
-            "run_id": run_id,
-            "seq": 1,
-            "time_sec": 0.0,
-            "type": "run_started",
-            "message": "grid world cognitive map started",
-        }
-    ]
-    episode_artifacts: list[dict[str, Any]] = []
-    trajectory_artifacts: dict[str, list[dict[str, float | int | str]]] = {}
-    error_window = 0.0
-    last_prediction_mse = 0.0
-    last_transition_accuracy = 0.0
-    last_planning_success = 0.0
-    last_path_efficiency = 0.0
-    seq = 2
-    episode = 1
-    trajectory: list[dict[str, float | int | str]] = []
-    steps_in_episode = 0
-
-    for step in range(1, config.train_steps + 1):
-        error, state, action, next_state = train_step_cognitive_map_with_trace(world, learner, rng, step)
-        error_window += error
-        steps_in_episode += 1
-        trajectory.append(
-            {
-                "t": float(step),
-                "x": int(next_state[0]),
-                "y": int(next_state[1]),
-                "state_x": int(state[0]),
-                "state_y": int(state[1]),
-                "action": action,
-                "reward": 1.0 if next_state != state else 0.0,
-            }
-        )
-
-        if step % config.eval_every == 0:
-            transition_accuracy, planning_success, path_efficiency = evaluate_cognitive_map(world, learner, rng, config)
-            prediction_mse = error_window / config.eval_every
-            last_prediction_mse = prediction_mse
-            last_transition_accuracy = transition_accuracy
-            last_planning_success = planning_success
-            last_path_efficiency = path_efficiency
-            summary_artifact_id = f"episode-{episode:06d}-summary"
-            trajectory_artifact_id = f"trajectory-episode-{episode:06d}"
-            episode_artifacts.append(
-                {
-                    "episode": episode,
-                    "summary_artifact_id": summary_artifact_id,
-                    "trajectory_artifact_id": trajectory_artifact_id,
-                    "reward": planning_success,
-                    "success": planning_success >= 0.5,
-                    "steps": steps_in_episode,
-                    "prediction_mse": prediction_mse,
-                    "transition_acc": transition_accuracy,
-                    "path_efficiency": path_efficiency,
-                }
-            )
-            trajectory_artifacts[trajectory_artifact_id] = list(trajectory)
-            events.append(
-                {
-                    "schema_version": 1,
-                    "run_id": run_id,
-                    "seq": seq,
-                    "time_sec": float(step),
-                    "episode": episode,
-                    "step": steps_in_episode,
-                    "type": "episode_finished",
-                    "metrics": {
-                        "prediction_mse": prediction_mse,
-                        "success_rate": planning_success,
-                        "transition_acc": transition_accuracy,
-                        "path_efficiency": path_efficiency,
-                    },
-                    "refs": [
-                        {"artifact_id": summary_artifact_id, "kind": "episode_summary"},
-                        {"artifact_id": trajectory_artifact_id, "kind": "trajectory"},
-                    ],
-                    "message": "grid world evaluation window finished",
-                }
-            )
-            seq += 1
-            episode += 1
-            trajectory = []
-            steps_in_episode = 0
-            error_window = 0.0
-
-    if steps_in_episode > 0:
-        transition_accuracy, planning_success, path_efficiency = evaluate_cognitive_map(world, learner, rng, config)
-        prediction_mse = error_window / steps_in_episode
-        last_prediction_mse = prediction_mse
-        last_transition_accuracy = transition_accuracy
-        last_planning_success = planning_success
-        last_path_efficiency = path_efficiency
-        summary_artifact_id = f"episode-{episode:06d}-summary"
-        trajectory_artifact_id = f"trajectory-episode-{episode:06d}"
-        episode_artifacts.append(
-            {
-                "episode": episode,
-                "summary_artifact_id": summary_artifact_id,
-                "trajectory_artifact_id": trajectory_artifact_id,
-                "reward": planning_success,
-                "success": planning_success >= 0.5,
-                "steps": steps_in_episode,
-                "prediction_mse": prediction_mse,
-                "transition_acc": transition_accuracy,
-                "path_efficiency": path_efficiency,
-            }
-        )
-        trajectory_artifacts[trajectory_artifact_id] = list(trajectory)
-        events.append(
-            {
-                "schema_version": 1,
-                "run_id": run_id,
-                "seq": seq,
-                "time_sec": float(config.train_steps),
-                "episode": episode,
-                "step": steps_in_episode,
-                "type": "episode_finished",
-                "metrics": {
-                    "prediction_mse": prediction_mse,
-                    "success_rate": planning_success,
-                    "transition_acc": transition_accuracy,
-                    "path_efficiency": path_efficiency,
-                },
-                "refs": [
-                    {"artifact_id": summary_artifact_id, "kind": "episode_summary"},
-                    {"artifact_id": trajectory_artifact_id, "kind": "trajectory"},
-                ],
-                "message": "grid world evaluation window finished",
-            }
-        )
-        seq += 1
-
-    events.append(
-        {
-            "schema_version": 1,
-            "run_id": run_id,
-            "seq": seq,
-            "time_sec": float(config.train_steps),
-            "type": "run_finished",
-            "metrics": {
-                "prediction_mse": last_prediction_mse,
-                "success_rate": last_planning_success,
-                "transition_acc": last_transition_accuracy,
-                "path_efficiency": last_path_efficiency,
-            },
-            "message": "grid world cognitive map finished",
-        }
-    )
-
-    return {
-        "run_id": run_id,
-        "prediction_mse": last_prediction_mse,
-        "transition_acc": last_transition_accuracy,
-        "planning_success": last_planning_success,
-        "path_efficiency": last_path_efficiency,
-        "episode_artifacts": episode_artifacts,
-        "trajectory_artifacts": trajectory_artifacts,
-        "events": events,
-        "topology": build_cognitive_map_export_topology(learner, world, config),
-        "grid_layout": world.export_layout(),
-    }
-
-
 def validate_cognitive_map_config(config: CognitiveMapConfig) -> None:
     if config.grid_size <= 1:
         raise ValueError(f"grid_size must be greater than 1, got {config.grid_size}")
@@ -1133,12 +406,3 @@ def softmax(values: list[float]) -> list[float]:
     exp_values = [math.exp(value - max_value) for value in values]
     total = sum(exp_values)
     return [value / total for value in exp_values]
-
-
-def _reset_net_state(net, *, keep_traces: bool) -> None:
-    weights = dict(getattr(net, "_edge_weights", {}))
-    traces = dict(getattr(net, "_plasticity_traces", {})) if keep_traces else None
-    net.reset()
-    net._edge_weights = weights
-    if traces is not None:
-        net._plasticity_traces = traces

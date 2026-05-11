@@ -438,4 +438,4 @@ prediction_error -> world model readout
 TD_error -> action-value readout
 ```
 
-这里的实验边界是：`snn_online` 负责任务、读出头和对照脚本；循环脉冲网络执行通过 `models/recurrent_spiking.py` 接到外部 `dynn`。文档只保留实验接口，不展开 `dynn` 内部实现细节。
+这里的实验边界是：`snn_online` 负责任务、读出头、循环脉冲网络和对照脚本。文档只保留实验接口，不引入外部执行引擎适配。

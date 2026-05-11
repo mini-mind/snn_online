@@ -112,23 +112,18 @@ physiology + task feedback + prediction error
 
 当前仓库是在线局部学习 SNN 的实验仓：
 
-- `snn_online`：负责研究问题、任务设计、实验编排、对照和报告。
-- `dynn`：作为外部执行引擎，为部分闭环实验提供运行时支持。
+- `snn_online`：负责研究问题、任务设计、学习规则、实验编排、对照和报告。
+- 本仓保持纯 Python 实验探索，不承担外部执行引擎或可视化系统适配。
 
 ## 项目入口
 
 - [Learning docs](docs/learning/INDEX.md)：跨领域研究手册与论文方法压缩。
 - [Minimal experiments](src/README.md)：当前实验入口、目录边界、运行命令和指标说明。
 
-## 运行前提
-
-- `src/experiments/etlp_continuous_toy.py` 与 `src/experiments/cognitive_map_etlp_toy.py` 是本仓 toy 实验入口，运行时通过 `src/models/toy_learning.py` 调用 `dynn`。
-- `src/experiments/point_robot_closed_loop.py` 及其对照脚本是当前的 `dynn`-backed 闭环路线。运行这些脚本前，需要本机存在同级 `dynn` 仓库检出。
-
 ## 当前代码边界
 
 - `src/envs/`：最小环境定义。
-- `src/models/`：学习器、读出头和 `dynn` 适配层。
+- `src/models/`：学习器、读出头和局部可塑性规则。
 - `src/experiments/`：实验入口脚本，负责组装配置并打印结果。
 
 顶层文档只保留方向与边界；详细命令、输出字段和指标含义见 [src/README.md](src/README.md)。
@@ -140,8 +135,6 @@ PYTHONPATH=src python src/experiments/etlp_continuous_toy.py
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like
-PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --export-run-dir ../neuralsoup/public/runs
-PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --export-run-dir ../neuralsoup/public/runs
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 ```
@@ -156,7 +149,3 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 3. dreaming / replay
    在局部规则稳定后，再加入 model-based imagined experience，避免系统复杂度先失控。
-
-导出后可在 `NeuralSoup` 中通过 `?runs=/runs&runId=run-grid-world-seed-<seed>` 或 `?runs=/runs&runId=run-point-robot-seed-<seed>` 打开。
-
-当前导出会把实验结构表达为通用嵌套子图：每个组可以继续包含子组或 node set，并通过输入 / 输出网关表达组间接口。`topology.json`、`manifest.json` 和相关 artifact 会保留变量名、英文 label、中文 `label_zh` 与 `subgraph_tree` metadata，便于 `NeuralSoup` 直接做分组、下钻和中文展示。

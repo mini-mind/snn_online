@@ -3,7 +3,7 @@
 `src/` 现在按三类职责拆分：
 
 - `envs/`：最小环境。
-- `models/`：可复用学习器与 `dynn` 适配层。
+- `models/`：可复用学习器、读出头和局部学习规则。
 - `experiments/`：实验入口脚本，只负责组装配置、运行和打印摘要。
 
 ## Directory Layout
@@ -19,7 +19,7 @@
 ## Dependency Boundary
 
 - `envs/`：纯 Python 最小环境。
-- `models/`：学习器和网络执行都尽量统一到 `dynn`。
+- `models/`：纯 Python 学习器和网络执行。
 - `experiments/`：入口脚本在本仓，但运行前需要让 Python 能找到 `src/`，例如使用 `PYTHONPATH=src`。
 
 ## Shared Pattern
@@ -101,25 +101,6 @@ $$
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250
 ```
 
-导出到 `NeuralSoup` 标准 run 目录：
-
-```bash
-PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 1000 --eval-every 250 --export-run-dir ../neuralsoup/public/runs
-```
-
-导出结构说明：
-
-- `topology.json` 包含通用 `subgraph_tree` 元数据，用嵌套组表达环境、接口、模型和预测器。
-- `manifest.json` 会同时列出回合摘要、轨迹、地图、环境说明、子图结构说明和每条连接的权重摘要 artifact。
-- 各 node / port / edge / artifact 会携带 `variable_names`、`variables`、`label`、`label_zh` 和必要 `metadata`，便于 NeuralSoup 直接显示中文标签和变量名。
-
-导出内容除了 `summary/events/topology/manifest` 外，还会附带：
-
-- 嵌套子图结构 `topology/subgraph-tree.json`；
-- 环境结构 artifact，例如 `maps/grid-world-map.json`、`environment/grid-world-environment.json`；
-- 每个 `node_set` / `edge_set` / `port` 的变量名、英文 label、中文 `label_zh` 与分层 metadata；
-- 每条显式连接的边文件 `topology/edges/*.json`，包含源变量名与目标变量名。
-
 关键指标：
 
 - `prediction_mse`：最近一个训练窗口内的一步预测均方误差。
@@ -133,7 +114,7 @@ PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 10
 
 组件：
 
-- `models/recurrent_spiking.py`：面向当前实验的 `dynn` 薄适配层；保留 LIF 与 Izhikevich 两种循环脉冲网络接口。
+- `models/recurrent_spiking.py`：本仓纯 Python 单层 R-SNN；保留 LIF 与 Izhikevich 两种循环脉冲网络接口。
 - `envs/point_robot.py`：连续状态、离散动作的 2D point robot，支持 `full` 与 `partial_goal_cue` 两种观测模式。
 - `models/point_robot_closed_loop.py`：world model + TD action value 控制闭环。
 
@@ -165,12 +146,6 @@ PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --episodes 160 
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --observation-mode partial_goal_cue --goal-cue-steps 6
 ```
 
-导出结构说明：
-
-- `topology.json` 包含通用 `subgraph_tree` 元数据，用嵌套组表达环境、观测接口、脉冲状态模型和预测 / 控制组。
-- `manifest.json` 会列出回合摘要、轨迹、任务环境说明、子图结构说明和每条连接的权重摘要 artifact。
-- 观测变量、隐藏群变量、世界模型变量和动作价值变量都会在 `topology/manifest/artifacts` 中保留变量名与中英文标签。
-
 这里的设计是：episode 前几步给出目标相对方向提示，之后隐藏方向，只保留自身位置、速度、进度和目标距离。这样就把任务从“瞬时反应控制”推向“需要在 recurrent state 里保留短期目标记忆”的设置。
 
 ### LIF vs IZ 对比
@@ -193,7 +168,7 @@ PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 说明：
 
 - 该脚本会对 `lif` 和 `izh` 分别在多 seed 上调用 `train_agent(...)`，再汇总均值。
-- 历史跑数会随 `dynn`、默认参数和随机种子变化而失效，因此这里不把旧 benchmark 数字当成“当前结论”保留。
+- 历史跑数会随默认参数和随机种子变化而失效，因此这里不把旧 benchmark 数字当成“当前结论”保留。
 - 若要记录新的结论，请同时保存完整命令、seed 范围和输出摘要。
 
 ### Partial Observable LIF vs IZ
