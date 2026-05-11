@@ -26,6 +26,10 @@ class RSNNConfig:
     plastic_lr: float = 0.0008
     weight_decay: float = 0.00005
     plasticity_rule: str = "three_factor"
+    metaplasticity: bool = False
+    meta_decay: float = 0.995
+    meta_lr: float = 0.008
+    meta_strength: float = 0.55
     randomize_intrinsics: bool = True
     membrane_decay_jitter: float = 0.035
     threshold_jitter: float = 0.12
@@ -109,6 +113,10 @@ class LocalRecurrentSpikingNetwork:
             max_delay=_MAX_RECURRENT_DELAY,
         )
         self.eligibility = [
+            [0.0 for _ in row]
+            for row in self.recurrent_sources
+        ]
+        self.meta_trace = [
             [0.0 for _ in row]
             for row in self.recurrent_sources
         ]
@@ -289,9 +297,20 @@ class LocalRecurrentSpikingNetwork:
                 self._update_recurrent_weight(target, edge_index, delta)
 
     def _update_recurrent_weight(self, target: int, edge_index: int, delta: float) -> None:
+        delta = self._apply_metaplasticity(target, edge_index, delta)
         weight = self.recurrent_weights[target][edge_index]
         next_weight = (weight + self.config.plastic_lr * delta) * (1.0 - self.config.weight_decay)
         self.recurrent_weights[target][edge_index] = clamp(next_weight, -1.5, 1.5)
+
+    def _apply_metaplasticity(self, target: int, edge_index: int, delta: float) -> float:
+        if not self.config.metaplasticity:
+            return delta
+        trace = self.meta_trace[target][edge_index]
+        trace = self.config.meta_decay * trace + self.config.meta_lr * abs(delta)
+        trace = clamp(trace, 0.0, 1.0)
+        self.meta_trace[target][edge_index] = trace
+        plasticity_gate = 1.0 / (1.0 + self.config.meta_strength * trace)
+        return delta * plasticity_gate
 
     def _resolve_neuron_modulation(self, modulation: float | list[float]) -> list[float]:
         if isinstance(modulation, list):

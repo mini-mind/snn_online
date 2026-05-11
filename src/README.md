@@ -221,6 +221,7 @@ PYTHONPATH=src python src/experiments/compare_mainline_history.py
 - `h2_tess_recurrent`：加入多时间尺度 `tess_like` 局部 trace。
 - `h3_tess_recurrent_delay`：加入真正 recurrent delay line。
 - `h4_eprop_like_v0`：加入 per-neuron modulation，作为当前 e-prop-like 主线。
+- `h5_metaplasticity_v0`：在 e-prop-like 主线上加入突触级慢变量，持续高活动的连接更新更保守。
 
 说明：
 
@@ -235,9 +236,10 @@ h1_three_factor_recurrent reward=0.433 success=0.200
 h2_tess_recurrent reward=-0.011 success=0.170
 h3_tess_recurrent_delay reward=0.142 success=0.210
 h4_eprop_like_v0 reward=0.289 success=0.210
+h5_metaplasticity_v0 reward=-0.265 success=0.190
 ```
 
-解释：移除外挂式 delay feature 后，`h4_eprop_like_v0` 在 hard preset 上还没有压过最朴素的 `three_factor` reward，只是在 success 上接近 recurrent delay 阶段。当前主线不是“已经赢了”，而是一个更符合约束、值得继续加 metaplasticity / homeostatic stability 的方向。
+解释：移除外挂式 delay feature 后，`h4_eprop_like_v0` 在 hard preset 上还没有压过最朴素的 `three_factor` reward，只是在 success 上接近 recurrent delay 阶段。`h5_metaplasticity_v0` 的默认参数是负结果，说明简单地给高 eligibility 连接加保护会抑制学习；下一步应小范围扫描 metaplastic gate 或转向 homeostatic threshold。
 
 ## Next
 
@@ -255,7 +257,7 @@ PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py
 
 当前 5 seed / 80 episodes 结果：
 
-历史候选复测中的 `scalar_delay_rline` 依赖已移除的外挂式 delay feature，不再作为当前结论使用。当前 hard 主线是 `h4_eprop_like_v0`，但它需要继续通过 metaplasticity / homeostatic threshold 增强稳定性。
+历史候选复测中的 `scalar_delay_rline` 依赖已移除的外挂式 delay feature，不再作为当前结论使用。当前 hard 主线是 `h4_eprop_like_v0`，并正在用 `h5_metaplasticity_v0` 检验稳定性改进。
 
 ### Quiet Internal Dynamics
 

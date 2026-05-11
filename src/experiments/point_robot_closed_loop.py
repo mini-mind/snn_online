@@ -23,6 +23,10 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
     parser.add_argument("--value-score-weight", type=float, default=AgentConfig.value_score_weight)
     parser.add_argument("--recurrent-plasticity", type=float, default=AgentConfig.recurrent_plasticity)
     parser.add_argument("--plasticity-rule", choices=["three_factor", "tess_like"], default=AgentConfig.plasticity_rule)
+    parser.add_argument("--metaplasticity", action="store_true")
+    parser.add_argument("--meta-decay", type=float, default=AgentConfig.meta_decay)
+    parser.add_argument("--meta-lr", type=float, default=AgentConfig.meta_lr)
+    parser.add_argument("--meta-strength", type=float, default=AgentConfig.meta_strength)
     parser.add_argument("--tess-fast-decay", type=float, default=AgentConfig.tess_fast_decay)
     parser.add_argument("--tess-slow-decay", type=float, default=AgentConfig.tess_slow_decay)
     parser.add_argument("--tess-post-decay", type=float, default=AgentConfig.tess_post_decay)
@@ -51,6 +55,10 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
             value_score_weight=args.value_score_weight,
             recurrent_plasticity=args.recurrent_plasticity,
             plasticity_rule=args.plasticity_rule,
+            metaplasticity=args.metaplasticity,
+            meta_decay=args.meta_decay,
+            meta_lr=args.meta_lr,
+            meta_strength=args.meta_strength,
             tess_fast_decay=args.tess_fast_decay,
             tess_slow_decay=args.tess_slow_decay,
             tess_post_decay=args.tess_post_decay,

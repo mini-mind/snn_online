@@ -23,6 +23,10 @@
 | `recurrent_scale` | recurrent synaptic strength | 是否造成爆发、沉默或稳定活动 |
 | `plastic_lr` | 突触可塑性速度 | 学习是否过快遗忘或过慢无效 |
 | `weight_decay` | 稳态 / 突触归一化压力 | 是否限制权重发散 |
+| `metaplasticity` | 突触可塑性状态 | 是否让高活动连接更稳定、低活动连接恢复可塑性 |
+| `meta_decay` | metaplastic 状态衰减 | 稳定性记忆持续多久 |
+| `meta_lr` | metaplastic 状态更新速度 | 连接被保护或释放的速度 |
+| `meta_strength` | metaplastic gate 强度 | 更新被抑制的程度 |
 | `tess_*_decay` | 多时间尺度 trace | fast / slow trace 是否覆盖不同事件间隔 |
 | `recurrent_delay_line` | 突触传输延迟 | 延迟分布是否帮助时序记忆 |
 
@@ -67,11 +71,11 @@ delay / trace 是否帮助闭环控制
 ## Near-Term Plan
 
 1. **主线历史 benchmark**
-   - 对照：`three_factor`、`tess_like`、`tess_like + recurrent_delay_line`、`eprop_like_v0`。
+   - 对照：`three_factor`、`tess_like`、`tess_like + recurrent_delay_line`、`eprop_like_v0`、`metaplasticity_v0`。
    - 任务：优先 `partial_goal_cue` hard preset。
    - 预算：先保持 5 seeds / 80 episodes。
    - 已移除外挂式 delay feature；它不再作为当前实验入口或核心对照。
-   - 当前结果：`eprop_like_v0` 尚未压过 `three_factor` reward，说明主线需要稳定性机制，而不是声明胜出。
+   - 当前结果：`eprop_like_v0` 尚未压过 `three_factor` reward；`metaplasticity_v0` 默认参数为负结果，说明稳定性机制需要更谨慎的门控或改走 homeostatic threshold。
 
 2. **生物参数表落到代码输出**
    - 在实验 summary 中记录关键时间常数、连接度、delay 开关和 trace decay。

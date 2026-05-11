@@ -31,6 +31,10 @@ class AgentConfig:
     value_score_weight: float = 0.55
     recurrent_plasticity: float = 0.0002
     plasticity_rule: str = "three_factor"
+    metaplasticity: bool = False
+    meta_decay: float = RSNNConfig.meta_decay
+    meta_lr: float = RSNNConfig.meta_lr
+    meta_strength: float = RSNNConfig.meta_strength
     tess_fast_decay: float = RSNNConfig.tess_fast_decay
     tess_slow_decay: float = RSNNConfig.tess_slow_decay
     tess_post_decay: float = RSNNConfig.tess_post_decay
@@ -51,6 +55,10 @@ def rsnn_config_from_agent(config: AgentConfig, input_dim: int = 1) -> RSNNConfi
         neuron_model=config.neuron_model,
         plastic_lr=config.recurrent_plasticity,
         plasticity_rule=config.plasticity_rule,
+        metaplasticity=config.metaplasticity,
+        meta_decay=config.meta_decay,
+        meta_lr=config.meta_lr,
+        meta_strength=config.meta_strength,
         tess_fast_decay=config.tess_fast_decay,
         tess_slow_decay=config.tess_slow_decay,
         tess_post_decay=config.tess_post_decay,
@@ -107,6 +115,22 @@ def biological_parameter_metadata(config: AgentConfig) -> dict[str, dict[str, ob
         "weight_decay": _biological_param_entry(
             "synaptic normalization pressure",
             rsnn_config.weight_decay,
+        ),
+        "metaplasticity": _biological_param_entry(
+            "activity-dependent plasticity gate",
+            rsnn_config.metaplasticity,
+        ),
+        "meta_decay": _biological_param_entry(
+            "metaplastic memory decay",
+            rsnn_config.meta_decay,
+        ),
+        "meta_lr": _biological_param_entry(
+            "metaplastic state update speed",
+            rsnn_config.meta_lr,
+        ),
+        "meta_strength": _biological_param_entry(
+            "metaplastic stabilization strength",
+            rsnn_config.meta_strength,
         ),
         "tess_fast_decay": _biological_param_entry(
             "fast pre-synaptic trace",
@@ -407,6 +431,7 @@ def train_agent(
         f"recurrent_degree={config.recurrent_degree} "
         f"plasticity_rule={config.plasticity_rule} "
         f"modulation_mode={config.modulation_mode} "
+        f"metaplasticity={config.metaplasticity} "
         f"tess_fast_decay={config.tess_fast_decay:.3f} "
             f"tess_slow_decay={config.tess_slow_decay:.3f} "
             f"tess_post_decay={config.tess_post_decay:.3f} "
@@ -499,6 +524,7 @@ def train_agent(
         "neuron_model": config.neuron_model,
         "recurrent_delay_line": config.recurrent_delay_line,
         "modulation_mode": config.modulation_mode,
+        "metaplasticity": config.metaplasticity,
         "seed": float(config.seed),
         "random_reward": random_reward,
         "random_success": random_success,

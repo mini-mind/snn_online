@@ -164,7 +164,7 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 ## Next
 
-`compare_mainline_history.py` 已成为当前核心对照：`three_factor` -> `tess_like` -> `recurrent_delay_line` -> `eprop_like_v0`。最新 hard preset 5 seed 结果显示，`eprop_like_v0` 还没有压过最朴素 `three_factor` 的 reward，只在 success 上接近 recurrent delay 阶段。因此下一步先进对照优先从 metaplasticity / homeostatic threshold 这类仍然局部、在线、少参数的机制进入，而不是恢复外挂式 readout feature。
+`compare_mainline_history.py` 已成为当前核心对照：`three_factor` -> `tess_like` -> `recurrent_delay_line` -> `eprop_like_v0` -> `metaplasticity_v0`。最新 hard preset 5 seed 结果显示，`eprop_like_v0` 还没有压过最朴素 `three_factor` 的 reward，只在 success 上接近 recurrent delay 阶段；`metaplasticity_v0` 默认参数是负结果。下一步应小范围诊断 metaplastic gate，或转向 homeostatic threshold 这类仍然局部、在线、少参数的稳定机制。
 
 quiet internal dynamics 已有第一版观察入口。hard 主线单 seed 结果显示：训练后 quiet 状态与任务期活动的相似度高于未训练基线，但没有达到重激活阈值。因此当前结论是“有任务痕迹，但还不能称为 replay / dreaming”。
 

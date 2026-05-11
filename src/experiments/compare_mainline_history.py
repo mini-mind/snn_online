@@ -33,6 +33,12 @@ STAGES = {
         "modulation_mode": "per_neuron",
         "recurrent_delay_line": True,
     },
+    "h5_metaplasticity_v0": {
+        "plasticity_rule": "tess_like",
+        "modulation_mode": "per_neuron",
+        "recurrent_delay_line": True,
+        "metaplasticity": True,
+    },
 }
 
 
@@ -116,6 +122,7 @@ def run_row(
         "neuron_model": agent_config.neuron_model,
         "modulation_mode": agent_config.modulation_mode,
         "recurrent_delay_line": agent_config.recurrent_delay_line,
+        "metaplasticity": agent_config.metaplasticity,
         "observation_mode": env_config.observation_mode,
         "goal_cue_steps": env_config.goal_cue_steps,
         "max_steps": env_config.max_steps,
