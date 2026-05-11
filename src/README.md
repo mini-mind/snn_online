@@ -15,6 +15,7 @@
 | `experiments/point_robot_closed_loop.py` | 点机器人完整控制闭环 | prediction error + TD error | `PYTHONPATH=src python src/experiments/point_robot_closed_loop.py` |
 | `experiments/compare_plasticity_rules.py` | 固定预算比较 `three_factor` 与 `tess_like` | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_plasticity_rules.py` |
 | `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
+| `experiments/summarize_jsonl_results.py` | 汇总 JSONL benchmark artifact | saved summary rows | `PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
 
@@ -177,7 +178,7 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 - 默认任务是 `partial_goal_cue`，因为它更依赖短期目标记忆。
 - 可通过 `--observation-mode full` 切回完整观测，不必为 full / partial 另拆第二个脚本。
 - 可通过 `--tess-fast-decay`、`--tess-slow-decay`、`--tess-post-decay`、`--tess-eligibility-decay` 直接扫描 `tess_like` 的多时间尺度 trace 参数，同时保持同一 benchmark 入口。
-- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/rule 的单次结果和最终 summary，便于正式 benchmark 留档或后续汇总。
+- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/rule 的单次结果和最终 summary，便于本地 benchmark 留档或后续汇总；这些 JSONL summary 可以作为本地 artifact，`runs/` 目录保持忽略。
 - 脚本会对两个规则分别在多 seed 上调用 `train_agent(...)`，打印每个 seed 的 `eval_reward`、`eval_success` 和 `elapsed_sec`。
 - JSONL 每行一个 JSON object：运行行包含 `plasticity_rule`、`seed`、`eval_reward`、`eval_success`、`elapsed_sec` 及本次关键配置；汇总行包含 `three_factor`、`tess_like`、`delta` 和共享 `config`。
 - 汇总输出包括：
@@ -208,14 +209,34 @@ PYTHONPATH=src python src/experiments/compare_delay_features.py
 
 - 默认使用 `tess_like` + `partial_goal_cue`，比较 `plain` 与 `delay` 两个条件。
 - `delay` 条件会把 RSNN feature 扩展为 `base spike feature + delay feature`。delay feature 是每个神经元的多时间尺度 spike trace 混合，混合权重由同一个低维 modulation signal 局部更新。
-- 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫面。
-- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary。
+- 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫描。
+- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary；这些 JSONL 文件按本地 artifact 处理，`runs/` 目录保持忽略。
 
 当前小基准结论：
 
 - `partial_goal_cue`，5 seeds，80 episodes，`tess_like`：delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`。
 - 速度代价明显：delay feature 的 wall time 约为 plain 的 `1.61x`。
-- 这足以支持下一步继续做更轻量的 delay 表示或 replay，但还不能证明该机制在全观测控制任务中也有价值。
+- 这足以支持下一步继续做更轻量的 delay 表示，但还不能证明该机制在全观测控制任务中也有价值。
+
+## Next
+
+当前工程优先级是先降低 delay feature 的计算成本，再用同一类部分可观测任务确认它是否仍然值得保留。只有在确认 delay 机制持续有用之后，才进入 replay / dreaming。
+
+### JSONL Summary
+
+用途：把 `--output-jsonl` 生成的本地 artifact 汇总成短行，便于比较多次实验。
+
+运行：
+
+```bash
+PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl
+```
+
+说明：
+
+- 只读取 JSONL 中 `type == "summary"` 的行，忽略单 seed 运行行和未知字段。
+- 输出包括关键配置、各条件均值、reward / success delta 和 speed ratio。
+- `runs/` 是忽略目录；这些文件是本地实验记录，不作为源码提交。
 
 ### LIF vs IZ 对比
 

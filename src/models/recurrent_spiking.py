@@ -100,6 +100,7 @@ class LocalRecurrentSpikingNetwork:
         self.slow_pre_trace = [0.0 for _ in range(self.config.n_neurons)]
         self.post_trace = [0.0 for _ in range(self.config.n_neurons)]
         self.delay_traces = _empty_delay_traces(self.config, self.delay_decays)
+        self.delay_feature_values = [0.0 for _ in range(self.config.n_neurons)]
         self.eligibility = [
             [0.0 for _ in row]
             for row in self.recurrent_sources
@@ -218,20 +219,23 @@ class LocalRecurrentSpikingNetwork:
             ]
         if not self.config.delay_features:
             return base_features
-        return base_features + self._delay_features()
+        return base_features + list(self.delay_feature_values)
 
     def _update_delay_traces(self) -> None:
         if not self.config.delay_features:
             return
         for neuron, spike in enumerate(self.spikes):
+            traces = self.delay_traces[neuron]
+            weights = self.delay_mix_weights[neuron]
+            mixed_feature = 0.0
             for slot, decay in enumerate(self.delay_decays):
-                self.delay_traces[neuron][slot] = decay * self.delay_traces[neuron][slot] + spike
+                trace = decay * traces[slot] + spike
+                traces[slot] = trace
+                mixed_feature += weights[slot] * trace
+            self.delay_feature_values[neuron] = mixed_feature
 
     def _delay_features(self) -> list[float]:
-        return [
-            sum(weight * trace for weight, trace in zip(weights, traces, strict=True))
-            for weights, traces in zip(self.delay_mix_weights, self.delay_traces, strict=True)
-        ]
+        return list(self.delay_feature_values)
 
     def _apply_three_factor(self, modulation: float, post_factor: list[float]) -> None:
         self.pre_trace = [
@@ -274,13 +278,17 @@ class LocalRecurrentSpikingNetwork:
         if not self.config.delay_features or self.config.delay_mix_lr == 0.0:
             return
         for neuron, traces in enumerate(self.delay_traces):
+            mixed_feature = self.delay_feature_values[neuron]
             for slot, trace in enumerate(traces):
                 delta = modulation * post_factor[neuron] * trace
                 weight = self.delay_mix_weights[neuron][slot]
                 next_weight = (weight + self.config.delay_mix_lr * delta) * (
                     1.0 - self.config.weight_decay
                 )
-                self.delay_mix_weights[neuron][slot] = clamp(next_weight, -0.8, 0.8)
+                updated_weight = clamp(next_weight, -0.8, 0.8)
+                self.delay_mix_weights[neuron][slot] = updated_weight
+                mixed_feature += (updated_weight - weight) * trace
+            self.delay_feature_values[neuron] = mixed_feature
 
     def _update_recurrent_weight(self, target: int, edge_index: int, delta: float) -> None:
         weight = self.recurrent_weights[target][edge_index]

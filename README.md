@@ -159,3 +159,9 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 3. dreaming / replay
    在局部规则稳定后，再加入 model-based imagined experience，避免系统复杂度先失控。
+
+## Next
+
+下一步工程优先级是先降低 delay feature 的计算成本，再确认它是否仍然值得保留。只有在确认 delay 机制对当前部分可观测任务持续有用之后，才进入 replay / dreaming。
+
+`runs/` 保持为忽略目录；使用 `--output-jsonl` 生成的逐 seed 结果和 summary 可以作为本地留档 artifact，不视为仓库内源码或基准真值。
