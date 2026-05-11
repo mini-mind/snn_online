@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import random
 import time
@@ -39,6 +40,100 @@ class AgentConfig:
     neuron_model: str = "lif"
     randomize_intrinsics: bool = True
     seed: int = 31
+
+
+def rsnn_config_from_agent(config: AgentConfig, input_dim: int = 1) -> RSNNConfig:
+    """Build the RSNN config used by the point-robot agent."""
+    return RSNNConfig(
+        input_dim=input_dim,
+        n_neurons=config.n_neurons,
+        recurrent_degree=config.recurrent_degree,
+        neuron_model=config.neuron_model,
+        plastic_lr=config.recurrent_plasticity,
+        plasticity_rule=config.plasticity_rule,
+        tess_fast_decay=config.tess_fast_decay,
+        tess_slow_decay=config.tess_slow_decay,
+        tess_post_decay=config.tess_post_decay,
+        tess_eligibility_decay=config.tess_eligibility_decay,
+        delay_features=config.delay_features,
+        recurrent_delay_line=config.recurrent_delay_line,
+        randomize_intrinsics=config.randomize_intrinsics,
+        seed=config.seed + 1,
+    )
+
+
+def _biological_param_entry(
+    analogy: str,
+    repo_value: object,
+    experiment_knob: str | None = None,
+) -> dict[str, object]:
+    entry: dict[str, object] = {
+        "analogy": analogy,
+        "repo_value": repo_value,
+    }
+    if experiment_knob is not None:
+        entry["experiment_knob"] = experiment_knob
+    return entry
+
+
+def biological_parameter_metadata(config: AgentConfig) -> dict[str, dict[str, object]]:
+    """Return compact biology-facing labels for the RSNN parameters used in this run."""
+    rsnn_config = rsnn_config_from_agent(config)
+    return {
+        "membrane_decay": _biological_param_entry(
+            "membrane leak / state retention",
+            rsnn_config.membrane_decay,
+        ),
+        "trace_decay": _biological_param_entry(
+            "spike trace / eligibility window",
+            rsnn_config.trace_decay,
+        ),
+        "threshold": _biological_param_entry(
+            "spike firing threshold",
+            rsnn_config.threshold,
+        ),
+        "recurrent_degree": _biological_param_entry(
+            "local recurrent fan-in",
+            rsnn_config.recurrent_degree,
+        ),
+        "recurrent_scale": _biological_param_entry(
+            "recurrent synaptic strength",
+            rsnn_config.recurrent_scale,
+        ),
+        "plastic_lr": _biological_param_entry(
+            "synaptic plasticity speed",
+            rsnn_config.plastic_lr,
+            experiment_knob="recurrent_plasticity",
+        ),
+        "weight_decay": _biological_param_entry(
+            "synaptic normalization pressure",
+            rsnn_config.weight_decay,
+        ),
+        "tess_fast_decay": _biological_param_entry(
+            "fast pre-synaptic trace",
+            rsnn_config.tess_fast_decay,
+        ),
+        "tess_slow_decay": _biological_param_entry(
+            "slow pre-synaptic trace",
+            rsnn_config.tess_slow_decay,
+        ),
+        "tess_post_decay": _biological_param_entry(
+            "post-synaptic trace",
+            rsnn_config.tess_post_decay,
+        ),
+        "tess_eligibility_decay": _biological_param_entry(
+            "eligibility memory",
+            rsnn_config.tess_eligibility_decay,
+        ),
+        "delay_features": _biological_param_entry(
+            "short-term residual activity readout",
+            rsnn_config.delay_features,
+        ),
+        "recurrent_delay_line": _biological_param_entry(
+            "recurrent transmission delay",
+            rsnn_config.recurrent_delay_line,
+        ),
+    }
 
 
 class LinearValueHead:
@@ -129,22 +224,7 @@ class ClosedLoopPointRobotAgent:
         self.config = config
         self.n_actions = n_actions
         self.rsnn = build_spiking_network(
-            RSNNConfig(
-                input_dim=obs_dim,
-                n_neurons=config.n_neurons,
-                recurrent_degree=config.recurrent_degree,
-                neuron_model=config.neuron_model,
-                plastic_lr=config.recurrent_plasticity,
-                plasticity_rule=config.plasticity_rule,
-                tess_fast_decay=config.tess_fast_decay,
-                tess_slow_decay=config.tess_slow_decay,
-                tess_post_decay=config.tess_post_decay,
-                tess_eligibility_decay=config.tess_eligibility_decay,
-                delay_features=config.delay_features,
-                recurrent_delay_line=config.recurrent_delay_line,
-                randomize_intrinsics=config.randomize_intrinsics,
-                seed=config.seed + 1,
-            ),
+            rsnn_config_from_agent(config, input_dim=obs_dim),
             rng,
         )
         hidden_dim = self.rsnn.feature_dim()
@@ -157,9 +237,11 @@ class ClosedLoopPointRobotAgent:
             observation_mode=observation_mode,
             rng=rng,
         )
+        self._previous_neuron_features = [0.0 for _ in range(config.n_neurons)]
 
     def reset_state(self) -> None:
         self.rsnn.reset_state()
+        self._previous_neuron_features = [0.0 for _ in range(self.config.n_neurons)]
 
     def observe(self, observation: list[float]) -> list[float]:
         return l2_normalize(self.rsnn.step(observation))
@@ -190,6 +272,25 @@ class ClosedLoopPointRobotAgent:
 
     def learn_value(self, features: list[float], action: int, td_error: float) -> None:
         self.value_head.update(features, action, td_error)
+
+    def recurrent_modulation(
+        self,
+        features: list[float],
+        next_features: list[float],
+        td_error: float,
+        prediction_mse: float,
+    ) -> list[float]:
+        """Build neuron-local modulation from reward and prediction signals."""
+        global_signal = clamp(0.35 * td_error - 0.15 * prediction_mse, -1.0, 1.0)
+        neuron_count = self.config.n_neurons
+        modulation = []
+        for index in range(neuron_count):
+            activity = 0.5 * (abs(features[index]) + abs(next_features[index]))
+            activity_delta = next_features[index] - self._previous_neuron_features[index]
+            local_gate = clamp(0.55 + activity + 0.35 * abs(activity_delta), 0.25, 1.35)
+            modulation.append(clamp(global_signal * local_gate, -1.0, 1.0))
+        self._previous_neuron_features = list(next_features[:neuron_count])
+        return modulation
 
 
 def run_episode(
@@ -224,7 +325,12 @@ def run_episode(
         td_error = reward + (0.0 if done else config.gamma * q_next) - q_current
         if learn:
             agent.learn_value(features, action, td_error)
-            modulation = clamp(0.35 * td_error - 0.15 * prediction_mse, -1.0, 1.0)
+            modulation = agent.recurrent_modulation(
+                features,
+                next_features,
+                td_error,
+                prediction_mse,
+            )
             agent.rsnn.apply_recurrent_modulation(modulation)
 
         total_reward += reward
@@ -276,11 +382,13 @@ def train_agent(
     config: AgentConfig,
     env_config: PointRobotConfig,
     verbose: bool = True,
-) -> dict[str, float | str]:
+) -> dict[str, object]:
     validate_agent_config(config)
+    biological_params = biological_parameter_metadata(config)
     start_time = time.perf_counter()
     rng = random.Random(config.seed)
     env = PointRobotEnv(env_config, rng)
+    task_metadata = env.task_metadata()
     agent = ClosedLoopPointRobotAgent(
         obs_dim=len(env.observation()),
         n_actions=len(ACTIONS),
@@ -305,8 +413,10 @@ def train_agent(
             f"randomize_intrinsics={config.randomize_intrinsics} "
             f"max_steps={env_config.max_steps} "
             f"observation_mode={env_config.observation_mode} "
-            f"goal_cue_steps={env_config.goal_cue_steps}"
+            f"goal_cue_steps={env_config.goal_cue_steps} "
+            f"benchmark_id={task_metadata['benchmark_id']}"
         )
+        print(f"biological_params={json.dumps(biological_params, ensure_ascii=True)}")
         print("learn: world_model <- prediction_error, action_value <- TD_error")
     random_reward, random_success, random_length = random_baseline(config, env_config, seed=config.seed + 9000)
     if verbose:
@@ -382,7 +492,8 @@ def train_agent(
             )
 
     elapsed_sec = time.perf_counter() - start_time
-    return {
+    summary: dict[str, object] = {
+        "biological_params": biological_params,
         "neuron_model": config.neuron_model,
         "delay_features": config.delay_features,
         "recurrent_delay_line": config.recurrent_delay_line,
@@ -399,6 +510,8 @@ def train_agent(
         "final_eval_length": final_eval_length,
         "elapsed_sec": elapsed_sec,
     }
+    summary.update(task_metadata)
+    return summary
 
 
 def clamp_observation(values: list[float], observation_mode: str) -> list[float]:

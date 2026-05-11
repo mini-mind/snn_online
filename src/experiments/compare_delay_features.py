@@ -9,7 +9,7 @@ from pathlib import Path
 
 from envs.point_robot import PointRobotConfig
 from models.common import mean, safe_ratio
-from models.point_robot_closed_loop import AgentConfig, train_agent
+from models.point_robot_closed_loop import AgentConfig, biological_parameter_metadata, train_agent
 
 
 def append_jsonl(path: Path, row: dict[str, object]) -> None:
@@ -29,7 +29,8 @@ def run_comparison(
     seeds: list[int],
     output_jsonl: Path | None = None,
 ) -> dict[str, dict[str, float]]:
-    summaries: dict[str, list[dict[str, float | str]]] = {"plain": [], "delay": []}
+    summaries: dict[str, list[dict[str, object]]] = {"plain": [], "delay": []}
+    task_metadata = env_config.task_metadata()
     for name, enabled in (("plain", False), ("delay", True)):
         print(f"condition={name}")
         for seed in seeds:
@@ -65,6 +66,16 @@ def run_comparison(
                         "max_steps": run_env_config.max_steps,
                         "delay_features": agent_config.delay_features,
                         "recurrent_delay_line": agent_config.recurrent_delay_line,
+                        "task_family": summary["task_family"],
+                        "benchmark_id": summary["benchmark_id"],
+                        "observability_level": summary["observability_level"],
+                        "horizon_level": summary["horizon_level"],
+                        "reward_level": summary["reward_level"],
+                        "dynamics_level": summary["dynamics_level"],
+                        "goal_structure_level": summary["goal_structure_level"],
+                        "action_level": summary["action_level"],
+                        "distribution_level": summary["distribution_level"],
+                        "biological_params": summary["biological_params"],
                     },
                 )
         print()
@@ -98,13 +109,22 @@ def run_comparison(
                 "delay": aggregated["delay"],
                 "delta": aggregated["delta"],
                 "config": config_to_dict(base_config, env_config, seeds),
+                "task_metadata": task_metadata,
+                "biological_params": {
+                    "plain": biological_parameter_metadata(
+                        replace(base_config, delay_features=False)
+                    ),
+                    "delay": biological_parameter_metadata(
+                        replace(base_config, delay_features=True)
+                    ),
+                },
             },
         )
     return aggregated
 
 
 def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds: list[int]) -> dict[str, object]:
-    return {
+    config = {
         "episodes": base_config.episodes,
         "eval_every": base_config.eval_every,
         "eval_episodes": base_config.eval_episodes,
@@ -118,6 +138,8 @@ def config_to_dict(base_config: AgentConfig, env_config: PointRobotConfig, seeds
         "max_steps": env_config.max_steps,
         "seeds": seeds,
     }
+    config.update(env_config.task_metadata())
+    return config
 
 
 def parse_args() -> tuple[AgentConfig, PointRobotConfig, list[int], Path | None]:
@@ -173,6 +195,7 @@ def main() -> None:
         f"task observation_mode={env_config.observation_mode} "
         f"goal_cue_steps={env_config.goal_cue_steps} "
         f"max_steps={env_config.max_steps} "
+        f"benchmark_id={env_config.task_metadata()['benchmark_id']} "
         f"n_neurons={agent_config.n_neurons} "
         f"recurrent_degree={agent_config.recurrent_degree} "
         f"plasticity_rule={agent_config.plasticity_rule} "

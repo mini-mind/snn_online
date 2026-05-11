@@ -15,6 +15,7 @@ ACTION_ACCEL = {
     "right": (1.0, 0.0),
     "stay": (0.0, 0.0),
 }
+TASK_FAMILY = "point_robot"
 
 
 @dataclass
@@ -31,6 +32,52 @@ class PointRobotConfig:
     observation_mode: str = "full"
     goal_cue_steps: int = 6
     seed: int = 23
+
+    def task_metadata(self) -> dict[str, str]:
+        """Stable task labels for summaries and JSONL artifacts."""
+        return {
+            "task_family": TASK_FAMILY,
+            "benchmark_id": point_robot_benchmark_id(
+                self.observation_mode,
+                self.goal_cue_steps,
+                self.max_steps,
+            ),
+            "observability_level": point_robot_observability_level(
+                self.observation_mode,
+                self.goal_cue_steps,
+            ),
+            "horizon_level": point_robot_horizon_level(self.max_steps),
+            "reward_level": "dense_reward",
+            "dynamics_level": "deterministic_dynamics",
+            "goal_structure_level": "single_random_goal",
+            "action_level": "discrete_actions",
+            "distribution_level": "train_eval_same",
+        }
+
+
+def point_robot_observability_level(observation_mode: str, goal_cue_steps: int) -> str:
+    if observation_mode == "full":
+        return "full"
+    if observation_mode == "partial_goal_cue":
+        return f"partial_goal_cue_{goal_cue_steps}"
+    raise ValueError(f"unsupported observation_mode: {observation_mode}")
+
+
+def point_robot_horizon_level(max_steps: int) -> str:
+    if max_steps <= 20:
+        return f"short_horizon_{max_steps}"
+    if max_steps <= 60:
+        return f"medium_horizon_{max_steps}"
+    return f"long_horizon_{max_steps}"
+
+
+def point_robot_benchmark_id(
+    observation_mode: str,
+    goal_cue_steps: int,
+    max_steps: int,
+) -> str:
+    observability_level = point_robot_observability_level(observation_mode, goal_cue_steps)
+    return f"{TASK_FAMILY}_{observability_level}_h{max_steps}"
 
 
 class PointRobotEnv:
@@ -49,6 +96,9 @@ class PointRobotEnv:
         self.goal_y = 0.0
         self.steps = 0
         self.reset()
+
+    def task_metadata(self) -> dict[str, str]:
+        return self.config.task_metadata()
 
     def reset(self) -> list[float]:
         self.x = self.rng.uniform(-0.8, 0.8)

@@ -123,7 +123,7 @@ PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --train-steps 10
 组件：
 
 - `models/recurrent_spiking.py`：本仓纯 Python 单层 R-SNN；保留 LIF 与 Izhikevich 两种循环脉冲网络接口。
-- `envs/point_robot.py`：连续状态、离散动作的 2D point robot，支持 `full` 与 `partial_goal_cue` 两种观测模式。
+- `envs/point_robot.py`：连续状态、离散动作的 2D point robot，支持 `full` 与 `partial_goal_cue` 两种观测模式，并提供稳定的任务标签（如 `benchmark_id`、`observability_level`、`horizon_level`）。
 - `models/point_robot_closed_loop.py`：world model + TD action value 控制闭环。
 
 用途：验证 R-SNN recurrent state 能否进入真正的 `observe -> act -> learn` 控制回路。
@@ -165,6 +165,8 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 - `eval_reward`：关闭学习后评估 episode 的平均总回报。
 - `eval_success`：关闭学习后评估成功率。
 - `eval_len`：关闭学习后平均 episode 长度。
+- `biological_params`：verbose 输出和 `train_agent(...)` summary 会附带紧凑参数字典，记录关键 decay / threshold / recurrent / delay 开关的生物类比标签和当前 repo 值。
+- recurrent plasticity 现在使用 per-neuron modulation：全局 TD error / prediction MSE 仍是低维调制来源，但会按每个神经元的近期活动和活动变化生成 `modulation_j`，再进入 `eligibility_ij * modulation_j` 的局部更新。
 
 部分可观测版本：
 
@@ -223,16 +225,18 @@ PYTHONPATH=src python src/experiments/compare_delay_features.py
 - 可通过 `--recurrent-delay-line` 让 recurrent edge 读取过去若干步的 source spike，用来检验真正连接延迟是否有帮助。
 - 入口只暴露 `--delay-features` 或 plain/delay 对照，不把内部 delay decay 展开成参数扫描。
 - 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/condition 的结果和最终 summary；这些 JSONL 文件按本地 artifact 处理，`runs/` 目录保持忽略。
+- JSONL 的 `run` 行会带 `biological_params`；`summary` 行会按 `plain` / `delay` 条件分别保留这块 metadata，便于回看 delay 开关对应的生物参照。
+- point robot 相关 summary 和 JSONL 运行行会额外带出稳定任务标签：`task_family`、`benchmark_id`、`observability_level`、`horizon_level`、`reward_level`、`dynamics_level`、`goal_structure_level`、`action_level`、`distribution_level`。当前映射保持简单直接：`full` / `partial_goal_cue_<steps>`、`short|medium|long_horizon_<max_steps>`、`dense_reward`、`deterministic_dynamics`、`single_random_goal`、`discrete_actions`、`train_eval_same`。
 
 当前小基准结论：
 
-- `partial_goal_cue`，5 seeds，80 episodes，`tess_like`：delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`。
-- 速度代价明显：delay feature 的 wall time 约为 plain 的 `1.61x`。
-- 这足以支持下一步继续做更轻量的 delay 表示，但还不能证明该机制在全观测控制任务中也有价值。
+- 历史结果：`partial_goal_cue`，5 seeds，80 episodes，`tess_like` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，wall time 约 `1.61x`。
+- 当前结果：加入 per-neuron modulation 后，在 `tess_like + partial_goal_cue + recurrent_delay_line` 下，delay feature 相对 plain RSNN 的 reward gain 约 `-1.533`，success gain 约 `-0.150`，wall time 约 `1.53x`。
+- 这说明 delay feature、连接延迟和 per-neuron modulation 之间存在负交互；下一步应拆开对照，而不是继续堆叠机制。
 
 ## Next
 
-当前工程优先级是先降低 delay feature 的计算成本，再用同一类部分可观测任务确认它是否仍然值得保留。只有在确认 delay 机制持续有用之后，才进入 replay / dreaming。
+当前工程优先级是先拆开 `delay_features`、`recurrent_delay_line` 和 per-neuron modulation 的交互，再用同一类部分可观测任务确认哪一种短期记忆机制值得保留。只有在确认机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
 
 ### JSONL Summary
 

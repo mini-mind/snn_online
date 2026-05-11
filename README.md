@@ -157,17 +157,19 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 2. delay features
    已加入 `--delay-features`：在 RSNN 输出中拼接多时间尺度 spike delay trace，并用同一个调制信号局部更新 delay mixture。它默认关闭，不改变旧实验；打开后优先用于 `partial_goal_cue`。
 
-当前 5 seed 小基准显示：在 `tess_like + partial_goal_cue` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，但 wall time 约为 `1.61x`。
+历史 5 seed 小基准显示：在 `tess_like + partial_goal_cue` 下，delay feature 相对 plain RSNN 的 reward gain 约 `+1.166`，success gain 约 `+0.110`，但 wall time 约为 `1.61x`。
 
 3. recurrent delay line
    已加入 `--recurrent-delay-line`：recurrent edge 可以读取过去若干步的 source spike，用来区别“额外 delay feature”和“连接本身的传输延迟”。
+
+当前代码已加入 per-neuron modulation。最新 5 seed 小基准显示：在 `tess_like + partial_goal_cue + recurrent_delay_line` 下，再叠加 delay feature 反而使 reward gain 约 `-1.533`、success gain 约 `-0.150`，wall time 约为 plain 的 `1.53x`。这说明 delay 机制不能简单叠加，下一步应先诊断调制和 delay feature 的相互作用。
 
 4. dreaming / replay
    在局部规则稳定后，再加入 model-based imagined experience，避免系统复杂度先失控。
 
 ## Next
 
-下一步工程优先级是先降低 delay feature 的计算成本，再确认它是否仍然值得保留。只有在确认 delay 机制对当前部分可观测任务持续有用之后，才进入 replay / dreaming。
+下一步工程优先级是先诊断 per-neuron modulation 与 delay feature / recurrent delay-line 的相互作用，再决定保留哪一种短期记忆机制。只有在确认某个 delay 机制对当前部分可观测任务持续有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
 
 `runs/` 保持为忽略目录；使用 `--output-jsonl` 生成的逐 seed 结果和 summary 可以作为本地留档 artifact，不视为仓库内源码或基准真值。
 
