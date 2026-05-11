@@ -30,6 +30,10 @@ class AgentConfig:
     value_score_weight: float = 0.55
     recurrent_plasticity: float = 0.0002
     plasticity_rule: str = "three_factor"
+    tess_fast_decay: float = RSNNConfig.tess_fast_decay
+    tess_slow_decay: float = RSNNConfig.tess_slow_decay
+    tess_post_decay: float = RSNNConfig.tess_post_decay
+    tess_eligibility_decay: float = RSNNConfig.tess_eligibility_decay
     neuron_model: str = "lif"
     randomize_intrinsics: bool = True
     seed: int = 31
@@ -130,6 +134,10 @@ class ClosedLoopPointRobotAgent:
                 neuron_model=config.neuron_model,
                 plastic_lr=config.recurrent_plasticity,
                 plasticity_rule=config.plasticity_rule,
+                tess_fast_decay=config.tess_fast_decay,
+                tess_slow_decay=config.tess_slow_decay,
+                tess_post_decay=config.tess_post_decay,
+                tess_eligibility_decay=config.tess_eligibility_decay,
                 randomize_intrinsics=config.randomize_intrinsics,
                 seed=config.seed + 1,
             ),
@@ -284,6 +292,10 @@ def train_agent(
             f"episodes={config.episodes} n_neurons={config.n_neurons} "
             f"recurrent_degree={config.recurrent_degree} "
             f"plasticity_rule={config.plasticity_rule} "
+            f"tess_fast_decay={config.tess_fast_decay:.3f} "
+            f"tess_slow_decay={config.tess_slow_decay:.3f} "
+            f"tess_post_decay={config.tess_post_decay:.3f} "
+            f"tess_eligibility_decay={config.tess_eligibility_decay:.3f} "
             f"randomize_intrinsics={config.randomize_intrinsics} "
             f"max_steps={env_config.max_steps} "
             f"observation_mode={env_config.observation_mode} "

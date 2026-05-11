@@ -169,7 +169,10 @@ PYTHONPATH=src python src/experiments/compare_plasticity_rules.py
 
 - 默认任务是 `partial_goal_cue`，因为它更依赖短期目标记忆。
 - 可通过 `--observation-mode full` 切回完整观测，不必为 full / partial 另拆第二个脚本。
+- 可通过 `--tess-fast-decay`、`--tess-slow-decay`、`--tess-post-decay`、`--tess-eligibility-decay` 直接扫描 `tess_like` 的多时间尺度 trace 参数，同时保持同一 benchmark 入口。
+- 可通过 `--output-jsonl /path/to/results.jsonl` 记录每个 seed/rule 的单次结果和最终 summary，便于正式 benchmark 留档或后续汇总。
 - 脚本会对两个规则分别在多 seed 上调用 `train_agent(...)`，打印每个 seed 的 `eval_reward`、`eval_success` 和 `elapsed_sec`。
+- JSONL 每行一个 JSON object：运行行包含 `plasticity_rule`、`seed`、`eval_reward`、`eval_success`、`elapsed_sec` 及本次关键配置；汇总行包含 `three_factor`、`tess_like`、`delta` 和共享 `config`。
 - 汇总输出包括：
   - `mean_eval_reward`
   - `mean_eval_success`

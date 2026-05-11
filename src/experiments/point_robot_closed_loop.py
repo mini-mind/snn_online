@@ -23,6 +23,10 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
     parser.add_argument("--value-score-weight", type=float, default=AgentConfig.value_score_weight)
     parser.add_argument("--recurrent-plasticity", type=float, default=AgentConfig.recurrent_plasticity)
     parser.add_argument("--plasticity-rule", choices=["three_factor", "tess_like"], default=AgentConfig.plasticity_rule)
+    parser.add_argument("--tess-fast-decay", type=float, default=AgentConfig.tess_fast_decay)
+    parser.add_argument("--tess-slow-decay", type=float, default=AgentConfig.tess_slow_decay)
+    parser.add_argument("--tess-post-decay", type=float, default=AgentConfig.tess_post_decay)
+    parser.add_argument("--tess-eligibility-decay", type=float, default=AgentConfig.tess_eligibility_decay)
     parser.add_argument("--neuron-model", choices=["lif", "izh"], default=AgentConfig.neuron_model)
     parser.add_argument("--observation-mode", choices=["full", "partial_goal_cue"], default=PointRobotConfig.observation_mode)
     parser.add_argument("--goal-cue-steps", type=int, default=PointRobotConfig.goal_cue_steps)
@@ -45,6 +49,10 @@ def parse_args() -> tuple[AgentConfig, PointRobotConfig]:
             value_score_weight=args.value_score_weight,
             recurrent_plasticity=args.recurrent_plasticity,
             plasticity_rule=args.plasticity_rule,
+            tess_fast_decay=args.tess_fast_decay,
+            tess_slow_decay=args.tess_slow_decay,
+            tess_post_decay=args.tess_post_decay,
+            tess_eligibility_decay=args.tess_eligibility_decay,
             neuron_model=args.neuron_model,
             randomize_intrinsics=not args.fixed_intrinsics,
             seed=args.seed,
