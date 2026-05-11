@@ -89,6 +89,7 @@ delay / trace 是否帮助闭环控制
    - 不设计显式 replay loop。
    - 只加入低输入 / 低行动压力下的内部滚动条件。
    - 观察是否出现 replay-like reactivation。
+   - 当前单 seed 观察：训练后 quiet 状态相对未训练基线更像任务活动，但尚未达到重激活阈值；暂不声称出现 replay / dreaming。
 
 ## What Counts As Progress
 

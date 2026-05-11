@@ -17,6 +17,7 @@
 | `experiments/compare_delay_features.py` | 比较 plain RSNN 与 delay-feature RSNN | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_features.py` |
 | `experiments/compare_delay_modulation_matrix.py` | 拆开 delay feature、连接延迟和调制模式的交互 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_delay_modulation_matrix.py` |
 | `experiments/compare_candidate_difficulties.py` | 复测候选机制在 easy / medium / hard 环境难度下的稳定性 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_candidate_difficulties.py` |
+| `experiments/observe_quiet_dynamics.py` | 训练后进入低输入安静期，观察内部活动是否自然贴近任务活动 | quiet activity / reactivation similarity | `PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py` |
 | `experiments/summarize_jsonl_results.py` | 汇总 JSONL benchmark artifact | saved summary rows | `PYTHONPATH=src python src/experiments/summarize_jsonl_results.py runs/*.jsonl` |
 | `experiments/compare_lif_vs_izh.py` | 比较 LIF 与 IZ 神经元模型 | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py` |
 | `experiments/compare_partial_observable_lif_vs_izh.py` | 在部分可观测导航上比较 LIF 与 IZ | reward / success / wall time | `PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py` |
@@ -279,6 +280,37 @@ hard: scalar_delay_rline reward=-0.908 success=0.140; per_neuron_plain_rline rew
 ```
 
 暂定判断：`scalar_delay_rline` 更像低难度 / 成功率导向方案；`per_neuron_plain_rline` 在长 horizon / 更短 cue 下更稳、更快。
+
+### Quiet Internal Dynamics
+
+用途：训练 hard preset 主线 agent 后，进入低输入安静期，只观察 recurrent state 是否自然贴近任务期活动。这个脚本不做显式 replay buffer、不生成 imagined episode、不在 quiet phase 更新权重。
+
+运行：
+
+```bash
+PYTHONPATH=src python src/experiments/observe_quiet_dynamics.py
+```
+
+输出指标：
+
+- `quiet_mean_activity`：安静期内部活动强度，过低表示基本沉默。
+- `quiet_consecutive_similarity`：相邻 quiet step 的相似度，越高表示内部状态越稳定。
+- `quiet_max_reference_similarity`：quiet step 与训练后真实任务活动片段的最大相似度均值。
+- `quiet_reactivation_fraction`：quiet step 中相似度超过阈值的比例。它只能说明“像不像任务活动”，不能单独证明有 replay / dreaming。
+- `untrained_*`：同一 reference set 下的未训练网络 quiet 基线。只有训练后指标明显高于这个基线时，才值得进一步讨论 replay-like reactivation。
+- `quiet_*_uplift`：训练后 quiet 指标减去未训练基线。若 uplift 接近或低于 0，应解释为“暂未观察到超出基线的自然重激活”。
+
+当前 hard 主线单 seed 观察结果：
+
+```text
+final_eval_reward=-1.834 final_eval_success=0.050
+quiet_max_reference_similarity=0.606
+untrained_quiet_max_reference_similarity=0.258
+quiet_reference_similarity_uplift=0.348
+quiet_reactivation_fraction=0.000
+```
+
+解释：训练后的 quiet 状态比未训练网络更接近任务期活动，但没有达到 `0.75` 阈值的重激活事件。因此当前只能说“安静期内部状态带有任务活动痕迹”，不能说已经出现 replay / dreaming。
 
 ### JSONL Summary
 

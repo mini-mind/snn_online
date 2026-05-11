@@ -173,6 +173,8 @@ PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
 
 下一步工程优先级是把 `per_neuron + recurrent_delay_line + plain` 作为 hard / 长 horizon 主线，把 `scalar + recurrent_delay_line + delay_features` 作为 easy / success-oriented 对照。只有在确认短期记忆机制稳定有用之后，才进入 quiet internal dynamics / replay-like reactivation 观察。
 
+quiet internal dynamics 已有第一版观察入口。hard 主线单 seed 结果显示：训练后 quiet 状态与任务期活动的相似度高于未训练基线，但没有达到重激活阈值。因此当前结论是“有任务痕迹，但还不能称为 replay / dreaming”。
+
 `runs/` 保持为忽略目录；使用 `--output-jsonl` 生成的逐 seed 结果和 summary 可以作为本地留档 artifact，不视为仓库内源码或基准真值。
 
 后续所有机制推进都要同时记录两个视角：参数是否能对照生物脑中的时间常数、连接度或调制强度；环境是否明确标注测试维度和难度等级，避免只看单一平均分。
