@@ -61,6 +61,23 @@ class GridWorld:
             return candidate
         return state
 
+    def export_layout(self) -> dict[str, object]:
+        return {
+            "grid_size": self.config.grid_size,
+            "rows": self.config.grid_size,
+            "columns": self.config.grid_size,
+            "obstacles": [
+                {"x": x, "y": y}
+                for (x, y) in sorted(self.obstacles, key=lambda item: (item[1], item[0]))
+            ],
+            "walkable_states": [
+                {"x": x, "y": y}
+                for (x, y) in sorted(self.states, key=lambda item: (item[1], item[0]))
+            ],
+            "wall_x": self.config.grid_size // 2 if self.config.grid_size >= 5 else None,
+            "gap_y": self.config.grid_size // 2 if self.config.grid_size >= 5 else None,
+        }
+
     def encode(self, state: tuple[int, int]) -> list[float]:
         code = self.state_codes[state]
         if self.config.noise <= 0.0:

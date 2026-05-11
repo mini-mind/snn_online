@@ -76,7 +76,7 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 ```text
 外部观测 / 生理信号
   -> 丘脑式路由与价值调制
-  -> 端脑/皮层式多层二维学习网络
+  -> 端脑/皮层式单层 recurrent 学习网络
   -> 动作意图
   -> 小脑式动作程序网络
   -> 环境动作
@@ -85,7 +85,7 @@ delta_w_ij = learning_rate * eligibility_trace_ij * modulation_signal
 
 建议的职责划分：
 
-- 端脑 / 皮层：主学习区，用多层二维稀疏 SNN 表示特征、状态、上下文、关联记忆、预测和简单推理。它承载 ETLP / CML 一类局部可塑性规则。
+- 端脑 / 皮层：主学习区，用单层 recurrent SNN 表示特征、状态、上下文、关联记忆、预测和简单推理。它承载 ETLP / CML / TESS-like 一类局部可塑性规则。
 - 丘脑：路由、价值计算和调制中心。它接收外部特征、生理信号和皮层状态，输出 `valence`、`arousal`、`attention_gate`、`plasticity_scale` 等低维调制信号。
 - 小脑：动作细节参数记忆与回放。它把高层动作意图展开为可执行的连续或离散动作流程，重点学习动作序列、误差修正和复用。
 - 中脑 / 后脑：内稳态动力系统。它维护心跳、饥饿、疼痛、疲劳、能量等低维生理变量，并让这些变量反过来影响价值和动作偏置。
@@ -139,11 +139,24 @@ physiology + task feedback + prediction error
 PYTHONPATH=src python src/experiments/etlp_continuous_toy.py
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py
+PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --plasticity-rule tess_like
 PYTHONPATH=src python src/experiments/cognitive_map_etlp_toy.py --export-run-dir ../neuralsoup/public/runs
 PYTHONPATH=src python src/experiments/point_robot_closed_loop.py --export-run-dir ../neuralsoup/public/runs
 PYTHONPATH=src python src/experiments/compare_lif_vs_izh.py
 PYTHONPATH=src python src/experiments/compare_partial_observable_lif_vs_izh.py
-PYTHONPATH=src python src/experiments/compare_depth_ablation.py
 ```
 
+## 当前落地顺序
+
+1. `tess_like` 多时间尺度局部 trace
+   当前已接入单层 recurrent SNN，作为 `three_factor` baseline 的直接对照。
+
+2. learnable delay
+   下一步优先在部分可观测点机器人上验证 delay 是否能提升短期记忆。
+
+3. dreaming / replay
+   在局部规则稳定后，再加入 model-based imagined experience，避免系统复杂度先失控。
+
 导出后可在 `NeuralSoup` 中通过 `?runs=/runs&runId=run-grid-world-seed-<seed>` 或 `?runs=/runs&runId=run-point-robot-seed-<seed>` 打开。
+
+当前导出会把实验结构表达为通用嵌套子图：每个组可以继续包含子组或 node set，并通过输入 / 输出网关表达组间接口。`topology.json`、`manifest.json` 和相关 artifact 会保留变量名、英文 label、中文 `label_zh` 与 `subgraph_tree` metadata，便于 `NeuralSoup` 直接做分组、下钻和中文展示。

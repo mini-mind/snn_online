@@ -1,4 +1,4 @@
-"""Thin `dynn` wrapper for recurrent spiking networks."""
+"""Thin `dynn` wrapper for a single-layer recurrent spiking network."""
 
 from __future__ import annotations
 
@@ -13,19 +13,11 @@ from models.dynn_support import dynn
 
 @dataclass
 class RSNNConfig:
-    """Recurrent spiking network configuration."""
+    """Single-layer recurrent spiking network configuration."""
 
     input_dim: int
     n_neurons: int = 48
-    n_layers: int = 1
-    grid_width: int = 0
-    grid_height: int = 0
-    input_grid_width: int = 0
-    input_grid_height: int = 0
-    recurrent_radius: int = 1
     recurrent_degree: int = 4
-    interlayer_radius: int = 1
-    interlayer_degree: int = 4
     neuron_model: str = "lif"
     membrane_decay: float = 0.86
     trace_decay: float = 0.90
@@ -35,6 +27,7 @@ class RSNNConfig:
     bias_scale: float = 0.18
     plastic_lr: float = 0.0008
     weight_decay: float = 0.00005
+    plasticity_rule: str = "three_factor"
     randomize_intrinsics: bool = True
     membrane_decay_jitter: float = 0.035
     threshold_jitter: float = 0.12
@@ -52,27 +45,22 @@ class RSNNConfig:
     izh_spike_threshold_jitter: float = 4.0
     izh_input_gain: float = 8.0
     izh_input_gain_jitter: float = 1.2
+    tess_fast_decay: float = 0.55
+    tess_slow_decay: float = 0.92
+    tess_post_decay: float = 0.80
+    tess_eligibility_decay: float = 0.88
     seed: int = 13
 
 
 class _ThreeFactorRule:
-    """Local recurrent plasticity used by the point-robot experiment."""
+    """Baseline local plasticity: pre-trace x post sensitivity x modulation."""
 
-    def __init__(
-        self,
-        config: RSNNConfig,
-        layer_hidden_ids: list[str],
-        layer_thresholds: dict[str, tuple[float, ...]],
-    ) -> None:
+    def __init__(self, config: RSNNConfig, thresholds: tuple[float, ...]) -> None:
         self.config = config
-        self.layer_hidden_ids = tuple(layer_hidden_ids)
         self.trace_decay = float(config.trace_decay)
         self.weight_decay = float(config.weight_decay)
-        self._threshold_map = dict(layer_thresholds)
-        self._width_map = {
-            node_set_id: _plastic_width(config)
-            for node_set_id in self.layer_hidden_ids
-        }
+        self.thresholds = thresholds
+        self.width = _plastic_width(config)
 
     def initialize_traces(self, *, edge_block) -> dict[str, tuple[float, ...]]:
         return {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
@@ -92,97 +80,145 @@ class _ThreeFactorRule:
     ):
         del post_activity, learning_rate, step_index
         trace_state = traces or {"pre": tuple(0.0 for _ in range(edge_block.source_count))}
-        prev_pre = tuple(float(value) for value in trace_state.get("pre", ()))
-        if len(prev_pre) != edge_block.source_count:
-            prev_pre = tuple(0.0 for _ in range(edge_block.source_count))
+        prev_pre = _safe_trace(trace_state.get("pre", ()), edge_block.source_count)
         next_pre = tuple(
             self.trace_decay * prev + float(activity)
             for prev, activity in zip(prev_pre, pre_activity, strict=True)
         )
-        if edge_block.source_node_set != edge_block.target_node_set:
-            result: dict[str, object] = {
-                "traces": {"pre": next_pre},
-                "weight_update_count": 0,
-                "mean_abs_weight_delta": 0.0,
-                "max_abs_weight_delta": 0.0,
-            }
-            if return_weights:
-                result["weights"] = tuple(edge_block.weights)
-            return result
+        if edge_block.source_node_set != "hidden" or edge_block.target_node_set != "hidden":
+            return _plasticity_result(edge_block, {"pre": next_pre}, return_weights)
 
-        state = node_states.get(edge_block.target_node_set, {})
-        post_voltage = tuple(float(value) for value in state.get("voltage", ()))
-        thresholds = self._threshold_map.get(edge_block.target_node_set, ())
-        width = self._width_map.get(edge_block.target_node_set, _plastic_width(self.config))
-        post_factor = tuple(
-            triangular_pseudo_derivative(voltage, threshold=threshold, width=width)
-            for voltage, threshold in zip(post_voltage, thresholds, strict=True)
+        post_factor = _post_factors(
+            node_states=node_states,
+            node_set_id=edge_block.target_node_set,
+            thresholds=self.thresholds,
+            width=self.width,
         )
         clipped_modulation = clamp(float(modulation), -1.0, 1.0)
         deltas = tuple(
             clipped_modulation * post_factor[target] * next_pre[source]
             for source, target in zip(edge_block.source_indices, edge_block.target_indices, strict=True)
         )
-        next_weights = tuple(
-            clamp(
-                (float(weight) + self.config.plastic_lr * delta) * (1.0 - self.weight_decay),
-                -1.5,
-                1.5,
-            )
-            for weight, delta in zip(edge_block.weights, deltas, strict=True)
+        return _apply_weight_deltas(
+            config=self.config,
+            edge_block=edge_block,
+            deltas=deltas,
+            traces={"pre": next_pre},
+            return_weights=return_weights,
         )
-        abs_deltas = tuple(
-            abs(after - before)
-            for before, after in zip(edge_block.weights, next_weights, strict=True)
-        )
-        result = {
-            "traces": {"pre": next_pre},
-            "weight_update_count": len(deltas),
-            "mean_abs_weight_delta": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else 0.0,
-            "max_abs_weight_delta": max(abs_deltas, default=0.0),
+
+
+class _TessLikeRule:
+    """TESS-like local rule with fast/slow pre traces and a local eligibility state."""
+
+    def __init__(self, config: RSNNConfig, thresholds: tuple[float, ...]) -> None:
+        self.config = config
+        self.weight_decay = float(config.weight_decay)
+        self.thresholds = thresholds
+        self.width = _plastic_width(config)
+
+    def initialize_traces(self, *, edge_block) -> dict[str, tuple[float, ...]]:
+        return {
+            "fast_pre": tuple(0.0 for _ in range(edge_block.source_count)),
+            "slow_pre": tuple(0.0 for _ in range(edge_block.source_count)),
+            "post": tuple(0.0 for _ in range(edge_block.target_count)),
+            "eligibility": tuple(0.0 for _ in range(len(edge_block.weights))),
         }
-        if return_weights:
-            result["weights"] = next_weights
-        return result
+
+    def step(
+        self,
+        *,
+        edge_block,
+        traces,
+        pre_activity,
+        post_activity,
+        learning_rate,
+        modulation,
+        node_states,
+        step_index=0,
+        return_weights=False,
+    ):
+        del learning_rate, step_index
+        trace_state = traces or {}
+        fast_pre = _safe_trace(trace_state.get("fast_pre", ()), edge_block.source_count)
+        slow_pre = _safe_trace(trace_state.get("slow_pre", ()), edge_block.source_count)
+        post_trace = _safe_trace(trace_state.get("post", ()), edge_block.target_count)
+        prev_eligibility = _safe_trace(trace_state.get("eligibility", ()), len(edge_block.weights))
+        next_fast_pre = tuple(
+            self.config.tess_fast_decay * prev + float(activity)
+            for prev, activity in zip(fast_pre, pre_activity, strict=True)
+        )
+        next_slow_pre = tuple(
+            self.config.tess_slow_decay * prev + float(activity)
+            for prev, activity in zip(slow_pre, pre_activity, strict=True)
+        )
+        next_post_trace = tuple(
+            self.config.tess_post_decay * prev + float(activity)
+            for prev, activity in zip(post_trace, post_activity, strict=True)
+        )
+        next_traces = {
+            "fast_pre": next_fast_pre,
+            "slow_pre": next_slow_pre,
+            "post": next_post_trace,
+            "eligibility": prev_eligibility,
+        }
+        if edge_block.source_node_set != "hidden" or edge_block.target_node_set != "hidden":
+            return _plasticity_result(edge_block, next_traces, return_weights)
+
+        post_factor = _post_factors(
+            node_states=node_states,
+            node_set_id=edge_block.target_node_set,
+            thresholds=self.thresholds,
+            width=self.width,
+        )
+        clipped_modulation = clamp(float(modulation), -1.0, 1.0)
+        next_eligibility = []
+        deltas = []
+        for edge_index, (source, target) in enumerate(
+            zip(edge_block.source_indices, edge_block.target_indices, strict=True)
+        ):
+            synchrony = 0.5 * (
+                next_fast_pre[source] * next_post_trace[target]
+                + next_slow_pre[source] * post_factor[target]
+            )
+            eligibility = (
+                self.config.tess_eligibility_decay * prev_eligibility[edge_index] + synchrony
+            )
+            next_eligibility.append(eligibility)
+            deltas.append(clipped_modulation * post_factor[target] * eligibility)
+        next_traces["eligibility"] = tuple(next_eligibility)
+        return _apply_weight_deltas(
+            config=self.config,
+            edge_block=edge_block,
+            deltas=tuple(deltas),
+            traces=next_traces,
+            return_weights=return_weights,
+        )
 
 
 class DynnRecurrentSpikingNetwork:
-    """Multi-layer recurrent spiking feature extractor backed by `dynn`."""
+    """Single hidden-population recurrent spiking feature extractor."""
 
     def __init__(self, config: RSNNConfig, rng: random.Random | None = None) -> None:
         self.config = config
         self.rng = rng or random.Random(config.seed)
-        self.grid_width, self.grid_height = resolve_grid_shape(
-            config.n_neurons,
-            config.grid_width,
-            config.grid_height,
-        )
-        self.layer_ids = [f"hidden_{index}" for index in range(config.n_layers)]
-        topology = _build_topology(config, self.rng, self.grid_width, self.grid_height)
-        layer_parameters = _layer_parameters_from_topology(topology, self.layer_ids)
-        self._layer_thresholds = _layer_thresholds_from_parameters(config, layer_parameters)
-        self._layer_reset_values = _layer_reset_values_from_parameters(config, layer_parameters)
+        topology = _build_topology(config, self.rng)
+        parameters = _hidden_parameters_from_topology(topology)
+        self._thresholds = _thresholds_from_parameters(config, parameters)
+        self._reset_values = _reset_values_from_parameters(config, parameters)
         self.graph = dynn.build(
             {"id": f"{config.neuron_model}-closed-loop-rsnn"},
             topology,
             seed=config.seed,
         )
-        self.rule = _ThreeFactorRule(config, self.layer_ids, self._layer_thresholds)
-        self.net = dynn.Net(
-            self.graph,
-            plasticity=self.rule,
-            learning_rate=config.plastic_lr,
-        )
-        self._spike_traces = {
-            layer_id: [0.0 for _ in range(config.n_neurons)]
-            for layer_id in self.layer_ids
-        }
-        self._features = [0.0 for _ in range(self.feature_dim())]
+        self.rule = _build_plasticity_rule(config, self._thresholds)
+        self.net = dynn.Net(self.graph, plasticity=self.rule, learning_rate=config.plastic_lr)
+        self._spike_trace = [0.0 for _ in range(config.n_neurons)]
+        self._features = [0.0 for _ in range(config.n_neurons)]
 
     def reset_state(self) -> None:
         self.net.reset()
-        for layer_id in self.layer_ids:
-            self._spike_traces[layer_id] = [0.0 for _ in range(self.config.n_neurons)]
+        self._spike_trace = [0.0 for _ in range(self.config.n_neurons)]
         self._features = [0.0 for _ in range(self.feature_dim())]
 
     def step(self, inputs: list[float]) -> list[float]:
@@ -197,45 +233,35 @@ class DynnRecurrentSpikingNetwork:
         return list(self._features)
 
     def feature_dim(self) -> int:
-        return self.config.n_neurons * self.config.n_layers
+        return self.config.n_neurons
 
     def _read_features(self, output) -> list[float]:
         dynamics_state = getattr(self.net, "_dynamics_state", {})
-        features: list[float] = []
-        for layer_id in self.layer_ids:
-            state = dynamics_state.get(layer_id, {}) if isinstance(dynamics_state, dict) else {}
-            spikes = _float_series(
-                output.node(layer_id) or state.get("activity", ()),
-                self.config.n_neurons,
-                0.0,
-            )
-            voltage = _float_series(state.get("voltage", ()), self.config.n_neurons, 0.0)
-            prev_trace = self._spike_traces[layer_id]
-            next_trace = [
-                self.config.trace_decay * previous + spike
-                for previous, spike in zip(prev_trace, spikes, strict=True)
+        state = dynamics_state.get("hidden", {}) if isinstance(dynamics_state, dict) else {}
+        spikes = _float_series(output.node("hidden") or state.get("activity", ()), self.config.n_neurons, 0.0)
+        voltage = _float_series(state.get("voltage", ()), self.config.n_neurons, 0.0)
+        next_trace = [
+            self.config.trace_decay * previous + spike
+            for previous, spike in zip(self._spike_trace, spikes, strict=True)
+        ]
+        self._spike_trace = next_trace
+        if self.config.neuron_model == "lif":
+            return [
+                trace + 0.15 * max(0.0, membrane / max(threshold, 1e-6))
+                for trace, membrane, threshold in zip(
+                    next_trace, voltage, self._thresholds, strict=True
+                )
             ]
-            self._spike_traces[layer_id] = next_trace
-            if self.config.neuron_model == "lif":
-                thresholds = self._layer_thresholds[layer_id]
-                features.extend(
-                    trace + 0.15 * max(0.0, membrane / max(threshold, 1e-6))
-                    for trace, membrane, threshold in zip(next_trace, voltage, thresholds, strict=True)
-                )
-            else:
-                thresholds = self._layer_thresholds[layer_id]
-                reset_values = self._layer_reset_values[layer_id]
-                features.extend(
-                    trace + 0.15 * max(0.0, (membrane - reset) / max(1.0, threshold - reset))
-                    for trace, membrane, threshold, reset in zip(
-                        next_trace,
-                        voltage,
-                        thresholds,
-                        reset_values,
-                        strict=True,
-                    )
-                )
-        return features
+        return [
+            trace + 0.15 * max(0.0, (membrane - reset) / max(1.0, threshold - reset))
+            for trace, membrane, threshold, reset in zip(
+                next_trace,
+                voltage,
+                self._thresholds,
+                self._reset_values,
+                strict=True,
+            )
+        ]
 
 
 def build_spiking_network(
@@ -245,79 +271,54 @@ def build_spiking_network(
     return DynnRecurrentSpikingNetwork(config, rng)
 
 
-def _build_topology(
-    config: RSNNConfig,
-    rng: random.Random,
-    grid_width: int,
-    grid_height: int,
-) -> dict[str, Any]:
+def _build_topology(config: RSNNConfig, rng: random.Random) -> dict[str, Any]:
     node_sets: list[dict[str, Any]] = [
         {
             "id": "obs",
             "size": config.input_dim,
             "node_type": "linear",
             "parameters": {"bias": 0.0},
-        }
+        },
+        {
+            "id": "hidden",
+            "size": config.n_neurons,
+            "node_type": _node_type(config),
+            "parameters": _node_parameters(config, rng),
+        },
     ]
-    edge_sets: list[dict[str, Any]] = []
-    ports: list[dict[str, Any]] = [{"id": "obs", "node_set": "obs", "kind": "input"}]
-
-    input_dim = config.input_dim
-    input_grid_width = 0
-    input_grid_height = 0
-    for layer_index in range(config.n_layers):
-        hidden_id = f"hidden_{layer_index}"
-        node_sets.append(
-            {
-                "id": hidden_id,
-                "size": config.n_neurons,
-                "node_type": _node_type(config),
-                "parameters": _node_parameters(config, rng),
-            }
-        )
-        ports.append({"id": hidden_id, "node_set": hidden_id, "kind": "output"})
-
-        source_id = "obs" if layer_index == 0 else f"hidden_{layer_index - 1}"
-        input_indices = build_input_indices(
-            config,
-            grid_width,
-            grid_height,
-            input_dim=input_dim,
-            input_grid_width=input_grid_width,
-            input_grid_height=input_grid_height,
+    edge_sets = [
+        _explicit_edge_set(
+            edge_id="obs_to_hidden",
+            source_id="obs",
+            target_id="hidden",
+            rows=[list(range(config.input_dim)) for _ in range(config.n_neurons)],
+            scale=config.input_scale / math.sqrt(max(1, config.input_dim)),
             rng=rng,
-        )
-        edge_sets.append(
-            _explicit_edge_set(
-                edge_id=f"{source_id}_to_{hidden_id}",
-                source_id=source_id,
-                target_id=hidden_id,
-                rows=input_indices,
-                scale=config.input_scale / math.sqrt(mean_fanin(input_indices)),
-                rng=rng,
-            )
-        )
+        ),
+        _explicit_edge_set(
+            edge_id="hidden_recurrent",
+            source_id="hidden",
+            target_id="hidden",
+            rows=_build_recurrent_indices(config, rng),
+            scale=config.recurrent_scale / math.sqrt(max(1, config.recurrent_degree)),
+            rng=rng,
+        ),
+    ]
+    ports = [
+        {"id": "obs", "node_set": "obs", "kind": "input"},
+        {"id": "hidden", "node_set": "hidden", "kind": "output"},
+    ]
+    return {"node_sets": node_sets, "edge_sets": edge_sets, "ports": ports}
 
-        recurrent_indices = build_recurrent_indices(config, grid_width, grid_height, rng)
-        edge_sets.append(
-            _explicit_edge_set(
-                edge_id=f"{hidden_id}_recurrent",
-                source_id=hidden_id,
-                target_id=hidden_id,
-                rows=recurrent_indices,
-                scale=config.recurrent_scale / math.sqrt(mean_fanin(recurrent_indices)),
-                rng=rng,
-            )
-        )
-        input_dim = config.n_neurons
-        input_grid_width = grid_width
-        input_grid_height = grid_height
 
-    return {
-        "node_sets": node_sets,
-        "edge_sets": edge_sets,
-        "ports": ports,
-    }
+def _build_recurrent_indices(config: RSNNConfig, rng: random.Random) -> list[list[int]]:
+    rows: list[list[int]] = []
+    for target in range(config.n_neurons):
+        candidates = [index for index in range(config.n_neurons) if index != target]
+        if not candidates:
+            candidates = [target]
+        rows.append(sample_candidates(candidates, config.recurrent_degree, rng))
+    return rows
 
 
 def _explicit_edge_set(
@@ -345,6 +346,25 @@ def _explicit_edge_set(
         "target": {"node_set": target_id},
         "representation": {"kind": "explicit", "edges": edges},
     }
+
+
+def _build_plasticity_rule(
+    config: RSNNConfig,
+    thresholds: tuple[float, ...],
+) -> _ThreeFactorRule | _TessLikeRule:
+    if config.plasticity_rule == "three_factor":
+        return _ThreeFactorRule(config, thresholds)
+    if config.plasticity_rule == "tess_like":
+        return _TessLikeRule(config, thresholds)
+    raise ValueError(f"unsupported plasticity_rule: {config.plasticity_rule}")
+
+
+def _hidden_parameters_from_topology(topology: dict[str, Any]) -> dict[str, Any]:
+    for node_set in topology.get("node_sets", []):
+        if str(node_set.get("id", "")) == "hidden":
+            raw_parameters = node_set.get("parameters", {})
+            return dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
+    return {}
 
 
 def _node_type(config: RSNNConfig) -> str:
@@ -432,52 +452,22 @@ def _node_parameters(config: RSNNConfig, rng: random.Random) -> dict[str, Any]:
     }
 
 
-def _layer_parameters_from_topology(
-    topology: dict[str, Any],
-    layer_ids: list[str],
-) -> dict[str, dict[str, Any]]:
-    wanted = set(layer_ids)
-    parameters: dict[str, dict[str, Any]] = {}
-    for node_set in topology.get("node_sets", []):
-        node_set_id = str(node_set.get("id", ""))
-        if node_set_id in wanted:
-            raw_parameters = node_set.get("parameters", {})
-            parameters[node_set_id] = dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
-    return parameters
-
-
-def _layer_thresholds_from_parameters(
+def _thresholds_from_parameters(
     config: RSNNConfig,
-    parameters: dict[str, dict[str, Any]],
-) -> dict[str, tuple[float, ...]]:
-    thresholds: dict[str, tuple[float, ...]] = {}
+    parameters: dict[str, Any],
+) -> tuple[float, ...]:
     key = "v_threshold" if config.neuron_model == "lif" else "v_peak"
     default = config.threshold if config.neuron_model == "lif" else config.izh_spike_threshold
-    for layer_index in range(config.n_layers):
-        layer_id = f"hidden_{layer_index}"
-        thresholds[layer_id] = _float_series(
-            parameters.get(layer_id, {}).get(key, ()),
-            config.n_neurons,
-            default,
-        )
-    return thresholds
+    return _float_series(parameters.get(key, ()), config.n_neurons, default)
 
 
-def _layer_reset_values_from_parameters(
+def _reset_values_from_parameters(
     config: RSNNConfig,
-    parameters: dict[str, dict[str, Any]],
-) -> dict[str, tuple[float, ...]]:
-    reset_values: dict[str, tuple[float, ...]] = {}
+    parameters: dict[str, Any],
+) -> tuple[float, ...]:
     key = "v_reset" if config.neuron_model == "lif" else "c"
     default = 0.0 if config.neuron_model == "lif" else config.izh_c
-    for layer_index in range(config.n_layers):
-        layer_id = f"hidden_{layer_index}"
-        reset_values[layer_id] = _float_series(
-            parameters.get(layer_id, {}).get(key, ()),
-            config.n_neurons,
-            default,
-        )
-    return reset_values
+    return _float_series(parameters.get(key, ()), config.n_neurons, default)
 
 
 def _float_series(value: Any, count: int, default: float) -> tuple[float, ...]:
@@ -498,107 +488,70 @@ def _plastic_width(config: RSNNConfig) -> float:
     return 0.8 if config.neuron_model == "lif" else 20.0
 
 
-def resolve_grid_shape(n_neurons: int, grid_width: int, grid_height: int) -> tuple[int, int]:
-    if grid_width > 0 and grid_height > 0:
-        if grid_width * grid_height != n_neurons:
-            raise ValueError(
-                f"grid shape {grid_width}x{grid_height} does not match n_neurons={n_neurons}"
-            )
-        return grid_width, grid_height
-    for candidate_height in range(int(math.sqrt(n_neurons)), 0, -1):
-        if n_neurons % candidate_height == 0:
-            return n_neurons // candidate_height, candidate_height
-    return n_neurons, 1
+def _safe_trace(values: tuple[float, ...] | list[float] | Any, count: int) -> tuple[float, ...]:
+    if isinstance(values, (list, tuple)) and len(values) == count:
+        return tuple(float(value) for value in values)
+    return tuple(0.0 for _ in range(count))
 
 
-def build_input_indices(
-    config: RSNNConfig,
-    grid_width: int,
-    grid_height: int,
+def _post_factors(
     *,
-    input_dim: int,
-    input_grid_width: int,
-    input_grid_height: int,
-    rng: random.Random,
-) -> list[list[int]]:
-    if (
-        input_grid_width <= 0
-        or input_grid_height <= 0
-        or input_grid_width * input_grid_height != input_dim
-    ):
-        return [list(range(input_dim)) for _ in range(config.n_neurons)]
-
-    rows: list[list[int]] = []
-    for neuron in range(config.n_neurons):
-        x, y = neuron_to_xy(neuron, grid_width)
-        source_x = map_coordinate(x, grid_width, input_grid_width)
-        source_y = map_coordinate(y, grid_height, input_grid_height)
-        candidates = neighborhood_indices(
-            center_x=source_x,
-            center_y=source_y,
-            width=input_grid_width,
-            height=input_grid_height,
-            radius=config.interlayer_radius,
-            include_center=True,
-        )
-        rows.append(sample_candidates(candidates, config.interlayer_degree, rng))
-    return rows
+    node_states,
+    node_set_id: str,
+    thresholds: tuple[float, ...],
+    width: float,
+) -> tuple[float, ...]:
+    state = node_states.get(node_set_id, {})
+    post_voltage = tuple(float(value) for value in state.get("voltage", ()))
+    if len(post_voltage) != len(thresholds):
+        post_voltage = tuple(0.0 for _ in range(len(thresholds)))
+    return tuple(
+        triangular_pseudo_derivative(voltage, threshold=threshold, width=width)
+        for voltage, threshold in zip(post_voltage, thresholds, strict=True)
+    )
 
 
-def build_recurrent_indices(
-    config: RSNNConfig,
-    grid_width: int,
-    grid_height: int,
-    rng: random.Random,
-) -> list[list[int]]:
-    rows: list[list[int]] = []
-    for neuron in range(config.n_neurons):
-        x, y = neuron_to_xy(neuron, grid_width)
-        candidates = neighborhood_indices(
-            center_x=x,
-            center_y=y,
-            width=grid_width,
-            height=grid_height,
-            radius=config.recurrent_radius,
-            include_center=False,
-        )
-        if not candidates:
-            candidates = [neuron]
-        rows.append(sample_candidates(candidates, config.recurrent_degree, rng))
-    return rows
+def _plasticity_result(edge_block, traces, return_weights: bool) -> dict[str, object]:
+    result: dict[str, object] = {
+        "traces": traces,
+        "weight_update_count": 0,
+        "mean_abs_weight_delta": 0.0,
+        "max_abs_weight_delta": 0.0,
+    }
+    if return_weights:
+        result["weights"] = tuple(edge_block.weights)
+    return result
 
 
-def neuron_to_xy(index: int, width: int) -> tuple[int, int]:
-    return index % width, index // width
-
-
-def xy_to_neuron(x: int, y: int, width: int) -> int:
-    return y * width + x
-
-
-def map_coordinate(index: int, source_size: int, target_size: int) -> int:
-    if target_size <= 1 or source_size <= 1:
-        return 0
-    scaled = round(index * (target_size - 1) / (source_size - 1))
-    return int(clamp(scaled, 0, target_size - 1))
-
-
-def neighborhood_indices(
+def _apply_weight_deltas(
     *,
-    center_x: int,
-    center_y: int,
-    width: int,
-    height: int,
-    radius: int,
-    include_center: bool,
-) -> list[int]:
-    indices: list[int] = []
-    for neighbor_y in range(max(0, center_y - radius), min(height - 1, center_y + radius) + 1):
-        for neighbor_x in range(max(0, center_x - radius), min(width - 1, center_x + radius) + 1):
-            if not include_center and neighbor_x == center_x and neighbor_y == center_y:
-                continue
-            indices.append(xy_to_neuron(neighbor_x, neighbor_y, width))
-    return indices
+    config: RSNNConfig,
+    edge_block,
+    deltas: tuple[float, ...],
+    traces: dict[str, tuple[float, ...]],
+    return_weights: bool,
+) -> dict[str, object]:
+    next_weights = tuple(
+        clamp(
+            (float(weight) + config.plastic_lr * delta) * (1.0 - config.weight_decay),
+            -1.5,
+            1.5,
+        )
+        for weight, delta in zip(edge_block.weights, deltas, strict=True)
+    )
+    abs_deltas = tuple(
+        abs(after - before)
+        for before, after in zip(edge_block.weights, next_weights, strict=True)
+    )
+    result: dict[str, object] = {
+        "traces": traces,
+        "weight_update_count": len(deltas),
+        "mean_abs_weight_delta": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else 0.0,
+        "max_abs_weight_delta": max(abs_deltas, default=0.0),
+    }
+    if return_weights:
+        result["weights"] = next_weights
+    return result
 
 
 def sample_candidates(candidates: list[int], degree: int, rng: random.Random) -> list[int]:
@@ -607,11 +560,6 @@ def sample_candidates(candidates: list[int], degree: int, rng: random.Random) ->
     if degree <= 0 or degree >= len(candidates):
         return list(candidates)
     return rng.sample(candidates, degree)
-
-
-def mean_fanin(rows: list[list[int]]) -> float:
-    total = sum(len(row) for row in rows)
-    return max(1.0, total / max(1, len(rows)))
 
 
 def triangular_pseudo_derivative(value: float, threshold: float, width: float = 0.8) -> float:

@@ -570,6 +570,362 @@ def train_cognitive_map(config: CognitiveMapConfig) -> None:
             error_window = 0.0
 
 
+def _variable_spec(
+    name: str,
+    label: str,
+    label_zh: str,
+    *,
+    role: str,
+) -> dict[str, str]:
+    return {
+        "name": name,
+        "label": label,
+        "label_zh": label_zh,
+        "role": role,
+    }
+
+
+def _indexed_variable_specs(
+    prefix: str,
+    count: int,
+    *,
+    label_prefix: str,
+    label_prefix_zh: str,
+    role: str,
+) -> list[dict[str, str]]:
+    return [
+        _variable_spec(
+            f"{prefix}_{index:03d}",
+            f"{label_prefix} {index}",
+            f"{label_prefix_zh}{index}",
+            role=role,
+        )
+        for index in range(count)
+    ]
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def _component_annotation(
+    annotation_type: str,
+    target: str,
+    label: str,
+    *,
+    label_zh: str,
+    layer_id: str,
+    member_kind: str,
+    variable_specs: list[dict[str, str]] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "label_zh": label_zh,
+        "layer_id": layer_id,
+        "member_kind": member_kind,
+    }
+    if variable_specs is not None:
+        payload["variable_names"] = [spec["name"] for spec in variable_specs]
+        payload["variables"] = variable_specs
+    if metadata:
+        payload.update(metadata)
+    return {
+        "type": annotation_type,
+        "target": target,
+        "label": label,
+        "metadata": payload,
+    }
+
+
+def _grid_world_environment_variables() -> list[dict[str, str]]:
+    return [
+        _variable_spec("state_x", "state x", "状态横坐标", role="environment"),
+        _variable_spec("state_y", "state y", "状态纵坐标", role="environment"),
+        _variable_spec("next_state_x", "next state x", "下一状态横坐标", role="environment"),
+        _variable_spec("next_state_y", "next state y", "下一状态纵坐标", role="environment"),
+        _variable_spec("action", "action", "动作", role="environment"),
+    ]
+
+
+def build_cognitive_map_export_topology(
+    learner: DynnLocalTransitionLearner,
+    world: GridWorld,
+    config: CognitiveMapConfig,
+) -> dict[str, Any]:
+    base_topology = learner.graph.topology
+    feature_dim = learner.feature_dim
+    state_variables = _indexed_variable_specs(
+        "state_code",
+        feature_dim,
+        label_prefix="state code",
+        label_prefix_zh="状态编码 ",
+        role="state_code",
+    )
+    node_variable_index: dict[str, list[dict[str, str]]] = {}
+    port_variable_index: dict[str, list[dict[str, str]]] = {}
+    annotations: list[dict[str, Any]] = []
+    node_sets: list[dict[str, Any]] = []
+    ports: list[dict[str, Any]] = []
+
+    for node_set in base_topology.get("node_sets", []):
+        node_copy = dict(node_set)
+        node_id = str(node_copy["id"])
+        raw_parameters = node_copy.get("parameters", {})
+        parameters = dict(raw_parameters) if isinstance(raw_parameters, dict) else {}
+        if node_id == "state":
+            layer_id = "layer_2_interface"
+            display_label = "State Code Population"
+            display_label_zh = "状态编码群"
+            variable_specs = state_variables
+            tags = ["layer:interface", "component:state_code"]
+        else:
+            action_name = node_id.removeprefix("pred_")
+            layer_id = "layer_4_prediction_planning"
+            display_label = f"Transition Predictor {action_name}"
+            display_label_zh = f"{action_name} 转移预测群"
+            variable_specs = _indexed_variable_specs(
+                f"{node_id}_feature",
+                int(node_copy["size"]),
+                label_prefix=f"{node_id} feature",
+                label_prefix_zh=f"{node_id} 特征 ",
+                role="prediction_feature",
+            )
+            tags = ["layer:core_model", "component:transition_predictor", f"action:{action_name}"]
+        parameters["export"] = {
+            "display_label": display_label,
+            "display_label_zh": display_label_zh,
+            "layer_id": layer_id,
+            "variable_names": [spec["name"] for spec in variable_specs],
+            "variables": variable_specs,
+        }
+        node_copy["parameters"] = parameters
+        node_copy["tags"] = _ordered_unique(list(node_copy.get("tags", [])) + tags)
+        node_sets.append(node_copy)
+        node_variable_index[node_id] = variable_specs
+        annotations.append(
+            _component_annotation(
+                "display_label",
+                node_id,
+                display_label,
+                label_zh=display_label_zh,
+                layer_id=layer_id,
+                member_kind="node_set",
+                variable_specs=variable_specs,
+                metadata={"count": int(node_copy["size"])},
+            )
+        )
+
+    for port in base_topology.get("ports", []):
+        port_copy = dict(port)
+        port_id = str(port_copy["id"])
+        params = dict(port_copy.get("params", {})) if isinstance(port_copy.get("params", {}), dict) else {}
+        if port_id == "state":
+            layer_id = "layer_2_interface"
+            display_label = "State Input Port"
+            display_label_zh = "状态输入端口"
+        else:
+            action_name = port_id.removeprefix("pred_")
+            layer_id = "layer_4_prediction_planning"
+            display_label = f"Prediction Port {action_name}"
+            display_label_zh = f"{action_name} 预测输出端口"
+        variable_specs = node_variable_index.get(str(port_copy.get("node_set", "")), [])
+        params["export"] = {
+            "display_label": display_label,
+            "display_label_zh": display_label_zh,
+            "layer_id": layer_id,
+            "variable_names": [spec["name"] for spec in variable_specs],
+            "variables": variable_specs,
+        }
+        port_copy["params"] = params
+        ports.append(port_copy)
+        port_variable_index[port_id] = variable_specs
+        annotations.append(
+            _component_annotation(
+                "display_label",
+                port_id,
+                display_label,
+                label_zh=display_label_zh,
+                layer_id=layer_id,
+                member_kind="port",
+                variable_specs=variable_specs,
+            )
+        )
+
+    edge_sets: list[dict[str, Any]] = []
+    artifact_specs: list[dict[str, Any]] = []
+    for edge_set in base_topology.get("edge_sets", []):
+        edge_copy = dict(edge_set)
+        edge_id = str(edge_copy["id"])
+        source_id = str(edge_copy["source"]["node_set"])
+        target_id = str(edge_copy["target"]["node_set"])
+        action_name = target_id.removeprefix("pred_")
+        source_variables = node_variable_index.get(source_id, [])
+        target_variables = node_variable_index.get(target_id, [])
+        display_label = f"{source_id} -> {target_id}"
+        display_label_zh = f"{source_id} 到 {target_id}"
+        edge_copy["tags"] = _ordered_unique(
+            list(edge_copy.get("tags", []))
+            + ["layer:prediction_planning", "component:transition_mapping", f"action:{action_name}"]
+        )
+        edge_copy["annotations"] = [
+            _component_annotation(
+                "display_label",
+                edge_id,
+                display_label,
+                label_zh=display_label_zh,
+                layer_id="layer_4_prediction_planning",
+                member_kind="edge_set",
+                metadata={
+                    "action": action_name,
+                    "source_variable_names": [spec["name"] for spec in source_variables],
+                    "target_variable_names": [spec["name"] for spec in target_variables],
+                },
+            )
+        ]
+        edge_sets.append(edge_copy)
+        representation = edge_set.get("representation", {})
+        edges = []
+        if isinstance(representation, dict):
+            edges = list(representation.get("edges", []))
+        artifact_specs.append(
+            {
+                "artifact_id": f"{edge_id}-edges",
+                "kind": "weight_summary",
+                "path": f"topology/edges/{edge_id}.json",
+                "media_type": "application/json",
+                "summary": {
+                    "label": display_label,
+                    "label_zh": display_label_zh,
+                    "edge_count": len(edges),
+                    "action": action_name,
+                },
+                "payload": {
+                    "schema_version": 1,
+                    "artifact_id": f"{edge_id}-edges",
+                    "edge_set_id": edge_id,
+                    "label": display_label,
+                    "label_zh": display_label_zh,
+                    "action": action_name,
+                    "source_node_set": source_id,
+                    "target_node_set": target_id,
+                    "source_variable_names": [spec["name"] for spec in source_variables],
+                    "target_variable_names": [spec["name"] for spec in target_variables],
+                    "edges": edges,
+                },
+            }
+        )
+
+    structure_payload = {
+        "schema_version": 1,
+        "tree_id": "grid-world-subgraph-tree",
+        "label": "Grid World Nested Subgraph",
+        "label_zh": "网格世界嵌套子图",
+        "root": {
+            "id": "cognitive_map_model",
+            "label": "Cognitive Map Model",
+            "label_zh": "认知地图模型",
+            "input_gateways": [{"id": "state_input", "port": "state", "label": "State Input", "label_zh": "状态输入"}],
+            "groups": [
+                {
+                    "id": "environment_group",
+                    "order": 1,
+                    "label": "Environment",
+                    "label_zh": "环境",
+                    "variables": _grid_world_environment_variables(),
+                    "metadata": {
+                        "grid_size": world.config.grid_size,
+                        "obstacle_count": len(world.obstacles),
+                        "action_names": list(GRID_ACTIONS),
+                    },
+                },
+                {
+                    "id": "state_interface_group",
+                    "order": 2,
+                    "label": "State Interface",
+                    "label_zh": "状态接口",
+                    "member_node_sets": ["state"],
+                    "input_gateways": [{"id": "state_input", "port": "state", "label": "State Input", "label_zh": "状态输入"}],
+                },
+                {
+                    "id": "transition_predictor_group",
+                    "order": 3,
+                    "label": "Transition Predictors",
+                    "label_zh": "转移预测器",
+                    "groups": [
+                        {
+                            "id": f"predictor_{node_id.removeprefix('pred_')}",
+                            "order": index,
+                            "label": f"Predictor {node_id.removeprefix('pred_')}",
+                            "label_zh": f"{node_id.removeprefix('pred_')} 预测器",
+                            "member_node_sets": [node_id],
+                        }
+                        for index, node_id in enumerate(
+                            [node_id for node_id in node_variable_index if node_id != "state"],
+                            start=1,
+                        )
+                    ],
+                },
+            ],
+        },
+    }
+    artifact_specs.append(
+        {
+            "artifact_id": "topology-subgraph-tree",
+            "kind": "topology_structure",
+            "path": "topology/subgraph-tree.json",
+            "media_type": "application/json",
+            "summary": {
+                "label": "Grid World Nested Subgraph",
+                "label_zh": "网格世界嵌套子图",
+                "root_group": "cognitive_map_model",
+            },
+            "payload": structure_payload,
+        }
+    )
+    artifact_specs.append(
+        {
+            "artifact_id": "grid-world-environment",
+            "kind": "task_environment",
+            "path": "environment/grid-world-environment.json",
+            "media_type": "application/json",
+            "summary": {
+                "label": "Grid World Environment",
+                "label_zh": "网格世界环境",
+                "grid_size": world.config.grid_size,
+                "feature_dim": config.feature_dim,
+            },
+            "payload": {
+                "schema_version": 1,
+                "label": "Grid World Environment",
+                "label_zh": "网格世界环境",
+                "environment": "grid_world",
+                "variable_names": [spec["name"] for spec in _grid_world_environment_variables()],
+                "variables": _grid_world_environment_variables(),
+                "config": {
+                    "grid_size": world.config.grid_size,
+                    "feature_dim": config.feature_dim,
+                    "noise": config.noise,
+                },
+            },
+        }
+    )
+
+    annotations.append({"type": "subgraph_tree", "label": "grid_world_nested_subgraph", "metadata": structure_payload})
+    return {
+        "node_sets": node_sets,
+        "edge_sets": edge_sets,
+        "ports": ports,
+        "annotations": annotations,
+        "metadata": {
+            "label": "Cognitive Map Topology",
+            "label_zh": "认知地图拓扑",
+            "environment": "grid_world",
+            "subgraph_tree": structure_payload,
+        },
+        "artifact_specs": artifact_specs,
+    }
+
+
 def train_cognitive_map_with_summary(
     config: CognitiveMapConfig,
 ) -> dict[str, float | str | dict[str, Any] | list[dict[str, Any]]]:
@@ -749,7 +1105,8 @@ def train_cognitive_map_with_summary(
         "episode_artifacts": episode_artifacts,
         "trajectory_artifacts": trajectory_artifacts,
         "events": events,
-        "topology": learner.graph.topology,
+        "topology": build_cognitive_map_export_topology(learner, world, config),
+        "grid_layout": world.export_layout(),
     }
 
 
